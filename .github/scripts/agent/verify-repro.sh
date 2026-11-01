@@ -48,7 +48,8 @@ case "$pkg" in
     [[ -f "$report" ]] || record not-run "No test report was produced (compilation failure?); see repro.log"
     total=$(jq '.totalTests // 0' "$report")
     failed=$(jq '.failed // 0' "$report")
-    message=$(jq -r '[.. | objects | select(.status? == "FAILURE") | .failureMessage // empty][0] // "" | .[0:500]' "$report")
+    message=$(jq -r '[.. | objects | select(.status? == "FAILURE") | .failureMessage // empty][0] // ""
+      | sub("\\n\\s*callableName:[\\s\\S]*$"; "") | .[0:500]' "$report")
     ;;
 esac
 
