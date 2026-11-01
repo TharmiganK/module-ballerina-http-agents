@@ -110,6 +110,21 @@ jobs:
       PR: ${{ needs.gate.outputs.pr }}
       REPO: ${{ github.repository }}
     steps:
+      # Agent tooling (scripts, prompts, schemas) always comes from the default branch, never from the PR checkout,
+      # which may be stale or PR-controlled.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: agent-tools
+          sparse-checkout: |
+            .github/scripts
+            .github/agent-prompts
+          persist-credentials: false
+      - name: Move agent tooling out of the workspace
+        run: |
+          mv agent-tools "$RUNNER_TEMP/agent-tools"
+          echo "TOOLS=$RUNNER_TEMP/agent-tools" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.gate.outputs.ref }}
@@ -123,7 +138,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PHASE: qa
           NUMBER: ${{ needs.gate.outputs.pr }}
-        run: .github/scripts/agent/build-context.sh
+        run: "$TOOLS/.github/scripts/agent/build-context.sh"
 
       - name: Prepare prompt
         id: prep
@@ -134,11 +149,11 @@ jobs:
           mkdir -p agent-output
           head_sha=$(jq -r .head_sha agent-context/pr.json)
           jq -n --arg pr "$PR" --arg head_sha "$head_sha" '{pr: $pr, head_sha: $head_sha}' > agent-output/meta.json
-          echo "schema=$(jq -c . .github/agent-prompts/qa/schema.json)" >> "$GITHUB_OUTPUT"
+          echo "schema=$(jq -c . "$TOOLS/.github/agent-prompts/qa/schema.json")" >> "$GITHUB_OUTPUT"
           delim="EOF_$(openssl rand -hex 8)"
           {
             echo "prompt<<$delim"
-            cat .github/agent-prompts/qa/prompt.md
+            cat "$TOOLS/.github/agent-prompts/qa/prompt.md"
             echo
             echo "## Run context"
             echo
@@ -183,7 +198,7 @@ jobs:
         if: steps.claude.outcome == 'success'
         env:
           GROUP_PREFIX: qa_${{ needs.gate.outputs.pr }}_
-        run: python3 .github/scripts/agent/verify-findings.py
+        run: python3 "$TOOLS/.github/scripts/agent/verify-findings.py"
 
       - uses: actions/upload-artifact@v7
         if: always() && steps.claude.outcome != 'skipped'
@@ -209,6 +224,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.event.repository.default_branch }}
           sparse-checkout: .github/scripts
           persist-credentials: false
       - uses: actions/download-artifact@v8

@@ -8,6 +8,7 @@
 set -euo pipefail
 
 MODE="${1:?usage: publish.sh <phase|fail>}"
+HERE="$(cd "$(dirname "$0")" && pwd)"
 : "${REPO:?}" "${NUMBER:?}" "${RUN_URL:?}"
 RESULT=agent-output/result.json
 META=agent-output/meta.json
@@ -255,7 +256,7 @@ case "$MODE" in
 
     # Replies may target the triggering review's comments and open threads started by a maintainer or the QA agent;
     # never third-party threads.
-    python3 .github/scripts/agent/pr-threads.py "$REPO" "$NUMBER" > threads.json
+    python3 "$HERE/pr-threads.py" "$REPO" "$NUMBER" > threads.json
     allowed_ids=$(jq -r '.[] | select(.resolved | not) | select(.source == "maintainer" or .source == "qa")
                          | .comments[].id' threads.json)
     if [[ -n "$review_id" ]]; then

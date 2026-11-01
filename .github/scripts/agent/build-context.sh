@@ -7,6 +7,7 @@ set -euo pipefail
 
 : "${REPO:?}" "${PHASE:?}" "${NUMBER:?}"
 OUT=agent-context
+HERE="$(cd "$(dirname "$0")" && pwd)"
 mkdir -p "$OUT"
 
 # In personal repositories every collaborator has write access; in organisations MEMBER may not, and the
@@ -62,7 +63,7 @@ case "$PHASE" in
     pr=$(gh api "repos/$REPO/pulls/$NUMBER")
     conversation=$(paginate "repos/$REPO/issues/$NUMBER/comments")
     all_review_comments=$(paginate "repos/$REPO/pulls/$NUMBER/comments")
-    threads=$(python3 .github/scripts/agent/pr-threads.py "$REPO" "$NUMBER")
+    threads=$(python3 "$HERE/pr-threads.py" "$REPO" "$NUMBER")
     if [[ "${MODE:-}" == auto ]]; then
       trigger='{"kind": "auto", "body": "", "comments": []}'
     elif [[ -n "${REVIEW_ID:-}" ]]; then

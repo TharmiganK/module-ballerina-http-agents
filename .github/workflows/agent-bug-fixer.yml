@@ -52,6 +52,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.event.repository.default_branch }}
           sparse-checkout: .github/scripts
           persist-credentials: false
 
@@ -183,6 +184,21 @@ jobs:
       ISSUE: ${{ needs.gate.outputs.issue }}
       REPO: ${{ github.repository }}
     steps:
+      # Agent tooling (scripts, prompts, schemas) always comes from the default branch, never from the PR checkout,
+      # which may be stale or PR-controlled.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: agent-tools
+          sparse-checkout: |
+            .github/scripts
+            .github/agent-prompts
+          persist-credentials: false
+      - name: Move agent tooling out of the workspace
+        run: |
+          mv agent-tools "$RUNNER_TEMP/agent-tools"
+          echo "TOOLS=$RUNNER_TEMP/agent-tools" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.gate.outputs.ref }}
@@ -197,7 +213,7 @@ jobs:
           REVIEW_ID: ${{ needs.gate.outputs.review_id }}
           COMMENT_ID: ${{ needs.gate.outputs.comment_id }}
           MODE: ${{ needs.gate.outputs.mode }}
-        run: .github/scripts/agent/build-context.sh
+        run: "$TOOLS/.github/scripts/agent/build-context.sh"
 
       - name: Prepare prompt and branch
         id: prep
@@ -208,7 +224,7 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          dir=.github/agent-prompts/bug-fixer
+          dir="$TOOLS/.github/agent-prompts/bug-fixer"
           base_sha=$(git rev-parse HEAD)
           if [[ "$PHASE" == implement ]]; then
             git checkout -q -b "agent/issue-$ISSUE"
@@ -291,7 +307,7 @@ jobs:
           steps.claude.outcome == 'success'
           && (env.PHASE == 'investigate'
             || (env.PHASE == 'discuss' && fromJSON(steps.claude.outputs.structured_output || '{}').new_plan_version == 1))
-        run: .github/scripts/agent/verify-repro.sh
+        run: "$TOOLS/.github/scripts/agent/verify-repro.sh"
 
       - uses: actions/upload-artifact@v7
         if: always() && steps.claude.outcome != 'skipped'
@@ -317,6 +333,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.event.repository.default_branch }}
           sparse-checkout: .github/scripts
           persist-credentials: false
       - uses: actions/download-artifact@v8
@@ -343,6 +360,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 1
       - uses: actions/download-artifact@v8
         with:
@@ -368,6 +386,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.event.repository.default_branch }}
           sparse-checkout: .github/scripts
           persist-credentials: false
       - run: .github/scripts/agent/publish.sh fail
