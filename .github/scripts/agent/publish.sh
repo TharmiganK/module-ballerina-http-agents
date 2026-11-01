@@ -193,7 +193,7 @@ case "$MODE" in
       field .blocked_reason | strip_markers > reason.md
       grep -q '^## ' reason.md || { echo "## Implementation blocked"; echo; } > comment.md
       cat reason.md >> comment.md
-      echo "The approved plan was not implemented. Comment to revise the plan, then add \`agent/approved\` again." >> comment.md
+      echo "The approved plan was not implemented. Comment \`/bug-fixer\` with guidance to revise the plan, then add \`agent/approved\` again." >> comment.md
       footer >> comment.md
       post_issue_comment "$NUMBER" comment.md
       remove_labels agent/implementing agent/approved
@@ -292,16 +292,16 @@ case "$MODE" in
     phase="${FAILED_PHASE:-unknown}"
     printf 'The bug fixer agent failed during the **%s** phase. See the workflow run for details.' "$phase" > comment.md
     case "$phase" in
-      investigate|implement)
-        printf ' Re-add `agent/%s` to retry.' "$([[ $phase == investigate ]] && echo investigate || echo approved)" >> comment.md
-        ;;
+      investigate) printf ' Add `agent/investigate` to retry.' >> comment.md ;;
+      implement)   printf ' Add `agent/approved` to retry the approved plan, or `agent/investigate` to start over.' >> comment.md ;;
+      discuss|review) printf ' Comment `/bug-fixer` to retry.' >> comment.md ;;
     esac
     footer >> comment.md
     post_issue_comment "$NUMBER" comment.md
-    if [[ "$phase" != review ]]; then
-      remove_labels agent/investigating agent/implementing
-      [[ "$phase" == investigate ]] && remove_labels agent/investigate
-      [[ "$phase" == implement ]] && remove_labels agent/approved
+    # Investigate and implement replace their in-progress label with agent/failed; a failed discuss or review keeps
+    # the issue's current state label, so the issue always has a single agent/* label.
+    if [[ "$phase" == investigate || "$phase" == implement ]]; then
+      remove_labels agent/investigate agent/investigating agent/approved agent/implementing agent/plan-ready
       add_labels agent/failed
     fi
     ;;

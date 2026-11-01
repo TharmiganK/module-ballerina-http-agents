@@ -14,19 +14,19 @@ permissions: {}
 jobs:
   gate:
     # Cheap pre-filter so unrelated events do not start a runner. The action re-checks write access.
+    # The agent engages only on demand: labels for investigate/implement, a /bug-fixer command for discuss/review.
     if: >-
       (github.event_name == 'issues'
         && (github.event.label.name == 'agent/investigate' || github.event.label.name == 'agent/approved'))
       || (github.event_name == 'issue_comment'
         && github.event.comment.user.type != 'Bot'
         && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
-        && ((!github.event.issue.pull_request && contains(github.event.issue.labels.*.name, 'agent/investigate'))
-          || (github.event.issue.pull_request && contains(github.event.issue.labels.*.name, 'agent/generated'))))
+        && startsWith(github.event.comment.body, '/bug-fixer'))
       || (github.event_name == 'pull_request_review'
         && github.event.review.user.type != 'Bot'
         && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.review.author_association)
         && contains(github.event.pull_request.labels.*.name, 'agent/generated')
-        && !(github.event.review.state == 'approved' && !github.event.review.body))
+        && startsWith(github.event.review.body, '/bug-fixer'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -51,6 +51,9 @@ jobs:
           set -euo pipefail
           ev="$GITHUB_EVENT_PATH"
           has() { jq -e --arg l "$1" '[(.issue // .pull_request).labels[].name] | index($l)' "$ev" > /dev/null; }
+          command_given() { [[ "$(jq -r "$1 // \"\" | split(\"\\n\")[0] | split(\" \")[0] | gsub(\"\\\\s\"; \"\")" "$ev")" == /bug-fixer ]]; }
+          # Issues carry a single agent/* state label; trigger labels are consumed when a run starts.
+          STATES=(agent/investigate agent/investigating agent/plan-ready agent/needs-info agent/approved agent/implementing agent/pr-open agent/failed)
           label() { gh api "repos/$REPO/issues/$number/labels" -f "labels[]=$1" > /dev/null; }
           unlabel() { for l in "$@"; do gh api -X DELETE "repos/$REPO/issues/$number/labels/$(jq -rn --arg s "$l" '$s|@uri')" > /dev/null 2>&1 || true; done; }
 
@@ -62,42 +65,47 @@ jobs:
               if [[ "$(jq -r .label.name "$ev")" == agent/investigate ]]; then
                 if ! has Type/Bug; then
                   echo "::notice::#$number is not labelled Type/Bug"
-                elif has agent/implementing || has agent/pr-open; then
-                  echo "::notice::#$number already has an implementation in progress or a PR"
+                elif has agent/investigating || has agent/implementing || has agent/pr-open; then
+                  echo "::notice::#$number already has an agent run in progress or an open PR"
+                  unlabel agent/investigate
                 else
                   phase=investigate
-                  unlabel agent/plan-ready agent/needs-info agent/failed agent/approved
+                  unlabel "${STATES[@]}"
                   label agent/investigating
                 fi
               else
-                if has agent/investigate && has agent/plan-ready && ! has agent/pr-open && ! has agent/implementing; then
+                if (has agent/plan-ready || has agent/failed) && ! has agent/pr-open && ! has agent/implementing; then
                   phase=implement
-                  unlabel agent/failed
+                  unlabel "${STATES[@]}"
                   label agent/implementing
                 else
-                  echo "::notice::agent/approved needs agent/investigate and agent/plan-ready, and no open agent PR"
+                  echo "::notice::agent/approved needs agent/plan-ready (or agent/failed after an approved plan) and no open agent PR"
+                  unlabel agent/approved
                 fi
               fi
               ;;
             issue_comment)
               comment_id=$(jq -r .comment.id "$ev")
-              if jq -e '.issue.pull_request' "$ev" > /dev/null; then
+              if ! command_given .comment.body; then
+                echo "::notice::Comment does not start with the /bug-fixer command"
+              elif jq -e '.issue.pull_request' "$ev" > /dev/null; then
                 pr=$(gh pr view "$number" --repo "$REPO" --json headRefName,state)
                 ref=$(jq -r .headRefName <<< "$pr")
                 if [[ "$(jq -r .state <<< "$pr")" == OPEN && "$ref" =~ ^agent/issue-([0-9]+)$ ]]; then
                   phase=review
                   issue="${BASH_REMATCH[1]}"
                 fi
-              elif (has agent/plan-ready || has agent/needs-info) && ! has agent/investigating \
-                   && ! has agent/implementing && ! has agent/pr-open; then
+              elif has agent/plan-ready || has agent/needs-info || has agent/failed; then
                 phase=discuss
               else
-                echo "::notice::#$number is not waiting for discussion (an agent run may be in progress)"
+                echo "::notice::#$number is not waiting for discussion (no plan yet, a run in progress, or a PR is open)"
               fi
               ;;
             pull_request_review)
               ref=$(jq -r .pull_request.head.ref "$ev")
-              if [[ "$(jq -r .pull_request.state "$ev")" == open && "$ref" =~ ^agent/issue-([0-9]+)$ ]]; then
+              if ! command_given .review.body; then
+                echo "::notice::Review does not start with the /bug-fixer command"
+              elif [[ "$(jq -r .pull_request.state "$ev")" == open && "$ref" =~ ^agent/issue-([0-9]+)$ ]]; then
                 phase=review
                 issue="${BASH_REMATCH[1]}"
                 review_id=$(jq -r .review.id "$ev")

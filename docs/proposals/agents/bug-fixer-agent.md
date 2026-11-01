@@ -83,10 +83,12 @@ All phases live in `.github/workflows/agent-bug-fixer.yml`.
 
 | Phase | Trigger | Job `if:` conditions |
 |---|---|---|
-| investigate | `issues: [labeled]` | label is `agent/investigate`; issue has `Type/Bug` |
-| discuss | `issue_comment: [created]` | not a PR; issue has `agent/investigate` and (`agent/plan-ready` or `agent/needs-info`) and neither `agent/implementing` nor `agent/pr-open`; comment author type is not `Bot`; `author_association` is `OWNER`, `MEMBER` or `COLLABORATOR` |
-| implement | `issues: [labeled]` | label is `agent/approved`; issue has `agent/plan-ready`; issue does not have `agent/pr-open` |
-| review | `pull_request_review: [submitted]`, `issue_comment: [created]` on a PR | PR has `agent/generated`; head branch matches `agent/issue-*`; author is not a bot; `author_association` as above |
+| investigate | `issues: [labeled]` | label is `agent/investigate`; issue has `Type/Bug`; no run in progress and no open agent PR |
+| discuss | `issue_comment: [created]` | the comment's first word is the `/bug-fixer` command; not a PR; issue is `agent/plan-ready`, `agent/needs-info` or `agent/failed`; comment author type is not `Bot`; `author_association` is `OWNER`, `MEMBER` or `COLLABORATOR` |
+| implement | `issues: [labeled]` | label is `agent/approved`; issue is `agent/plan-ready` (or `agent/failed` after an approved plan); no open agent PR |
+| review | `pull_request_review: [submitted]`, `issue_comment: [created]` on a PR | the review body or comment starts with `/bug-fixer`; PR has `agent/generated`; head branch matches `agent/issue-*`; author is not a bot; `author_association` as above |
+
+The agent engages only on demand: maintainers trigger investigation and implementation with labels, and discussion and review handling with the `/bug-fixer` command (first word of an issue comment, PR comment or review body). Other comments and reviews are ignored, so maintainers can discuss freely. To get replies on inline review comments, put `/bug-fixer` in the review body; a `/bug-fixer` PR comment is answered with a summary only.
 
 `author_association` is only a cheap pre-filter (a `COLLABORATOR` may have read-only access). The action's own write-permission check is authoritative.
 
@@ -96,16 +98,18 @@ A `gate` job routes each event to a phase using the labels in the event payload 
 
 ### Label lifecycle
 
+An issue carries a single `agent/*` label at a time, showing its state. The two maintainer labels are triggers that the workflow consumes when the run starts.
+
 | Label | Set by | Meaning |
 |---|---|---|
-| `agent/investigate` | Maintainer | Engage the agent on this issue. Stays on while the agent is engaged; removing it disengages; removing and re-adding re-runs the investigation. |
+| `agent/investigate` | Maintainer (trigger) | Start, or restart, an investigation. Replaced by `agent/investigating` when the run starts. |
 | `agent/investigating` | Workflow | Investigation running. |
 | `agent/plan-ready` | Publish job | Root cause and a plan were posted. |
 | `agent/needs-info` | Publish job | Could not reproduce or needs details. |
-| `agent/approved` | Maintainer | Implement the latest plan version posted before this label was added. |
+| `agent/approved` | Maintainer (trigger) | Implement the latest plan version posted before this label was added. Replaced by `agent/implementing` when the run starts. |
 | `agent/implementing` | Workflow | Implementation running. |
 | `agent/pr-open` | Publish job | Fix PR opened. |
-| `agent/failed` | Publish job (`if: failure()`) | A phase failed; a comment links the run. |
+| `agent/failed` | Publish job (`if: failure()`) | An investigation or implementation failed; a comment links the run. A failed discuss or review only comments and keeps the current state. |
 | `agent/generated` | Publish job | Marks issues and PRs created by any agent. |
 
 ```mermaid
@@ -113,14 +117,17 @@ stateDiagram-v2
     [*] --> investigating: maintainer adds agent/investigate
     investigating --> plan_ready
     investigating --> needs_info
-    plan_ready --> plan_ready: maintainer comment (Plan vN+1)
-    needs_info --> plan_ready: maintainer comment
-    needs_info --> needs_info: maintainer comment
+    plan_ready --> plan_ready: /bug-fixer comment (Plan vN+1)
+    needs_info --> plan_ready: /bug-fixer comment
+    needs_info --> needs_info: /bug-fixer comment
     plan_ready --> implementing: maintainer adds agent/approved
     implementing --> pr_open
-    pr_open --> pr_open: review submitted (replies, pushes)
+    implementing --> plan_ready: blocked
+    pr_open --> pr_open: /bug-fixer review (replies, pushes)
     investigating --> failed
     implementing --> failed
+    failed --> investigating: agent/investigate
+    failed --> implementing: agent/approved
 ```
 
 Labels are created by `.github/scripts/setup-labels.sh`.
