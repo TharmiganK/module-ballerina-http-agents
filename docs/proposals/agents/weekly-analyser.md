@@ -244,6 +244,15 @@ Transfer between jobs: the agent job splits the structured output into the publi
 | Measured per unit | 6–9 minutes and 28–53 turns in the first runs (`sse-streaming`); runner minutes are free on public repositories |
 | Estimated Claude usage | 60–150 turns, 3–8M mostly cached input tokens per run; the largest of the three agents |
 
+## Find-similar mode
+
+A maintainer can ask for a targeted search by labelling an issue or a pull request with `agent/find-similar` (`.github/workflows/agent-find-similar.yml`). The label is consumed when the search starts.
+
+1. **Scope generation.** A read-only scoper agent reads the seed (for a PR: the fix diff and linked issues; for an issue: the report and the bug fixer's investigation) and returns the defect pattern (summary, root cause, fix) and 1–3 scope units in the catalogue's shape, plus search hints and the seed's own locations to exclude. It reasons about where else the module makes the same assumption (client and service side, HTTP/1.1 and HTTP/2, other payload types, headers, parsers and builders) but does not verify anything.
+2. **Validation.** `find-similar-scope.py` drops paths that do not exist and unknown test packages, prefixes unit ids with the seed (`similar-pr9-...`) so fingerprints never collide with catalogue units, and fails if no usable unit remains.
+3. **Analysis.** The analyser is dispatched with the generated units (`custom_scopes`, `seed`). It runs them in parallel with the prompt's find-similar section: hunt for the same root cause, never report the seed or what its fix covers, verify each occurrence with a reproduction, and list every checked site in the coverage. Publishing, dedup, caps and security handling are the same as weekly runs; issues say which seed they are similar to.
+4. **Results.** The seed gets one comment when the search starts (pattern and units) and one when it ends (filed issues, dropped candidates with reasons, and the report location). Find-similar runs have their own concurrency group and never advance the weekly rotation.
+
 ## Alternatives considered
 
 | Alternative | Reason not chosen |

@@ -5,7 +5,11 @@ Selection: the units given in SCOPE_INPUT (comma-separated); otherwise UNITS_PER
 analysed first (in catalogue order), then by the highest score of weeks since the last analysis plus 4 if any of the
 unit's files changed on master since then.
 
-Env: REPO, GH_TOKEN, SCOPE_INPUT, UNITS_PER_RUN, UPSTREAM_ISSUE_REPOS. Expects the agent-state branch fetched as
+Custom mode (find-similar): CUSTOM_SCOPES is a JSON array of generated units (same fields as the catalogue, plus
+pattern, seed and exclude) and SEED names the issue or PR they were generated from; the catalogue and rotation are
+not used.
+
+Env: REPO, GH_TOKEN, SCOPE_INPUT, UNITS_PER_RUN, UPSTREAM_ISSUE_REPOS, CUSTOM_SCOPES, SEED. Expects the agent-state branch fetched as
 origin/agent-state if it exists. Writes agent-context/known-issues.json and agent-context/<unit>/scope.json, and the
 step output units (JSON array of unit ids).
 """
@@ -37,6 +41,10 @@ def changed_files(unit, since_sha):
 
 def select(state):
     """Returns [(unit, reason)] for this run."""
+    custom = os.environ.get("CUSTOM_SCOPES", "").strip()
+    if custom:
+        seed = os.environ.get("SEED", "")
+        return [(dict(unit, seed=seed), f"similar to {seed}") for unit in json.loads(custom)]
     requested = [r.strip() for r in os.environ.get("SCOPE_INPUT", "").split(",") if r.strip()]
     if requested:
         by_id = {u["id"]: u for u in SCOPES}

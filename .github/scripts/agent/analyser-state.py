@@ -4,7 +4,9 @@ A unit is only marked as analysed when its agent job completed and this was not 
 only as counts.
 
 Usage: analyser-state.py <state-dir>
-Env: UNITS (JSON array of planned units), SHA, RUN_URL, RUN_NUMBER, DRY_RUN, SEC_FOUND, SEC_DELIVERED, OUTPUTS_DIR,
+Find-similar runs (SEED set) write their report under a seed-specific name and never advance the rotation.
+
+Env: UNITS (JSON array of planned units), SEED, SHA, RUN_URL, RUN_NUMBER, DRY_RUN, SEC_FOUND, SEC_DELIVERED, OUTPUTS_DIR,
 REPORT_DIR. Reads <OUTPUTS_DIR>/<artifact>/{meta.json,scope.json,result.json,usage.json,completed} per unit and
 <REPORT_DIR>/publish-report.json.
 """
@@ -54,7 +56,8 @@ def main():
 
     completed = [u for u in planned if u in outputs and (outputs[u] / "completed").exists()]
     lines = [
-        f"# Weekly analyser run {env['RUN_NUMBER']}" + (" (dry run)" if dry_run else ""), "",
+        (f"# Find-similar run {env['RUN_NUMBER']} for {env['SEED']}" if env.get("SEED")
+         else f"# Weekly analyser run {env['RUN_NUMBER']}") + (" (dry run)" if dry_run else ""), "",
         f"- **Date:** {now:%Y-%m-%d %H:%M} UTC",
         f"- **Commit:** `{env['SHA'][:12]}`",
         f"- **Units:** {', '.join(f'`{u}`' for u in planned)} ({len(completed)} completed)",
@@ -89,13 +92,15 @@ def main():
     report = "\n".join(lines) + "\n"
 
     week = now.isocalendar()
-    report_path = STATE_DIR / "reports" / f"{week.year}-W{week.week:02d}-run{env['RUN_NUMBER']}.md"
+    seed = env.get("SEED", "").replace(":", "-")
+    name = f"{week.year}-W{week.week:02d}-" + (f"similar-{seed}-" if seed else "") + f"run{env['RUN_NUMBER']}.md"
+    report_path = STATE_DIR / "reports" / name
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(report)
 
     state_file = STATE_DIR / "state.json"
     state = json.loads(state_file.read_text()) if state_file.exists() else {"units": {}, "runs": []}
-    if not dry_run:
+    if not dry_run and not env.get("SEED"):
         for unit in completed:
             state["units"][unit] = {"last_analysed": now.isoformat(), "sha": env["SHA"], "run_url": env["RUN_URL"]}
     state["runs"] = (state.get("runs", []) + [{

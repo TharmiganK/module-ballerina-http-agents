@@ -1,0 +1,176 @@
+name: Agent - Find similar defects
+
+# Label an issue or a PR with agent/find-similar: a scoper agent derives the defect pattern from it and generates up
+# to three scope units, and the weekly analyser hunts for other occurrences in those units (verified reproductions,
+# dedup, issues linking the seed, a summary comment on the seed).
+# Design: docs/proposals/agents/weekly-analyser.md
+on:
+  issues:
+    types: [labeled]
+  # pull_request_target runs this workflow from the base branch; PR code is never checked out.
+  pull_request_target:
+    types: [labeled]
+
+permissions: {}
+
+jobs:
+  gate:
+    if: github.event.label.name == 'agent/find-similar'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      pull-requests: write
+    outputs:
+      seed: ${{ steps.seed.outputs.seed }}
+      number: ${{ steps.seed.outputs.number }}
+    steps:
+      - id: seed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          number=$(jq -r '(.issue // .pull_request).number' "$GITHUB_EVENT_PATH")
+          kind=$([[ "$GITHUB_EVENT_NAME" == issues ]] && echo issue || echo pr)
+          # The label is a trigger: consume it so that adding it again starts a new search.
+          gh api -X DELETE "repos/$REPO/issues/$number/labels/agent%2Ffind-similar" > /dev/null || true
+          { echo "seed=$kind:$number"; echo "number=$number"; } >> "$GITHUB_OUTPUT"
+
+  scope:
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    env:
+      REPO: ${{ github.repository }}
+      SEED: ${{ needs.gate.outputs.seed }}
+      NUMBER: ${{ needs.gate.outputs.number }}
+    outputs:
+      scopes: ${{ steps.validate.outputs.scopes }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 50
+          persist-credentials: false
+
+      - name: Build seed context
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "$SEED" == issue:* ]]; then
+            PHASE=investigate .github/scripts/agent/build-context.sh
+          else
+            PHASE=qa .github/scripts/agent/build-context.sh
+          fi
+
+      - name: Prepare prompt
+        id: prep
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          echo "schema=$(jq -c . .github/agent-prompts/find-similar/schema.json)" >> "$GITHUB_OUTPUT"
+          delim="EOF_$(openssl rand -hex 8)"
+          {
+            echo "prompt<<$delim"
+            cat .github/agent-prompts/find-similar/prompt.md
+            echo
+            echo "## Run context"
+            echo
+            echo "- Repository: $REPO"
+            echo "- Seed: $SEED"
+            echo "- Checked-out commit (for permalinks): $(git rev-parse HEAD)"
+            echo "- Context files: $(ls agent-context | sed 's|^|agent-context/|' | tr '\n' ' ')"
+            echo "- Workflow run: $RUN_URL"
+            echo "$delim"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run Claude
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          prompt: ${{ steps.prep.outputs.prompt }}
+          claude_args: |
+            --model claude-opus-5-5
+            --max-turns 30
+            --allowedTools "Read,Glob,Grep,Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh api:*)"
+            --disallowedTools "Edit,Write,Bash(git push:*),Bash(git commit:*),Bash(gh issue create:*),Bash(gh issue comment:*),Bash(gh pr comment:*),WebFetch,WebSearch"
+            --json-schema '${{ steps.prep.outputs.schema }}'
+
+      - name: Validate generated scope
+        id: validate
+        env:
+          STRUCTURED_OUTPUT: ${{ steps.claude.outputs.structured_output }}
+        run: |
+          set -euo pipefail
+          mkdir -p agent-output
+          printf '%s' "$STRUCTURED_OUTPUT" > agent-output/scope-result.json
+          scopes=$(python3 .github/scripts/agent/find-similar-scope.py agent-output/scope-result.json "$SEED")
+          printf '%s' "$scopes" > agent-output/scopes.json
+          echo "scopes=$scopes" >> "$GITHUB_OUTPUT"
+          jq -r '.[] | "Unit \(.id): \(.paths | length) paths, tests in \(.test_packages | join(", "))"' agent-output/scopes.json
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: find-similar-scope
+          path: agent-output/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  dispatch:
+    needs: [gate, scope]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      issues: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      SEED: ${{ needs.gate.outputs.seed }}
+      NUMBER: ${{ needs.gate.outputs.number }}
+      SCOPES: ${{ needs.scope.outputs.scopes }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - run: |
+          set -euo pipefail
+          gh workflow run agent-weekly-analyser.yml --repo "$REPO" -f custom_scopes="$SCOPES" -f seed="$SEED"
+          {
+            echo "Searching for defects similar to this one in $(jq length <<< "$SCOPES") generated scope unit(s):"
+            echo
+            jq -r '.[] | "- `\(.id)`: \(.description)"' <<< "$SCOPES"
+            echo
+            echo "**Pattern:** $(jq -r '.[0].pattern.summary' <<< "$SCOPES")"
+            echo
+            echo "Results will be posted here when the analysis finishes."
+            echo
+            echo "---"
+            echo "<sub>Posted by the find-similar scoper · [workflow run]($RUN_URL)</sub>"
+          } > comment.md
+          gh api "repos/$REPO/issues/$NUMBER/comments" -F body=@comment.md > /dev/null
+
+  report-failure:
+    needs: [gate, scope, dispatch]
+    if: failure() && needs.gate.outputs.number != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ needs.gate.outputs.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: gh api "repos/$REPO/issues/$NUMBER/comments" -f body="The find-similar search failed. See the [workflow run]($RUN_URL). Add \`agent/find-similar\` again to retry." > /dev/null

@@ -57,3 +57,20 @@ State in `rule` which rule applied and why (one or two sentences).
   - `repro`: `test_package`, `test_filter` (Java only), `group`, `test_code` (the full test code including the port constant). Required for `bug` and `question`.
 - `security` (at most 3): `key`, `title`, `severity` (`critical`, `high`, `medium`, `low`), `cwe_ids` (for example `CWE-113`) and `body` (description, affected code with permalinks, reproduction or reasoning, impact, suggested fix).
 - `coverage`: Markdown for the run report: what you examined (spec sections, files, tests), what you ran, candidates you dropped and why (duplicate of #n, not reproducible, out of scope). Do not mention security findings here.
+
+## Find-similar mode
+
+When the run context says `Mode: find-similar`, the unit was generated from a known defect (the seed) instead of taken from the catalogue. `agent-context/scope.json` then also has:
+
+- `seed`: the issue or PR it was generated from (`issue:<n>` or `pr:<n>`); read it with `gh issue view` or `gh pr view` / `gh pr diff` for full detail.
+- `pattern`: the defect pattern (`summary`, `root_cause`, and `fix` when a fix exists).
+- `hints`: what to search for (identifiers, regular expressions, call sites) to find other occurrences.
+- `exclude`: the seed's own locations.
+
+In this mode:
+
+1. Hunt for other occurrences of the same root cause in the unit's paths: the same mistake in a sibling code path (client vs service, HTTP/1.1 vs HTTP/2, another payload type or header, another builder or parser). Use the hints, but also reason about where else the same assumption is made.
+2. Do not report the seed itself, its locations in `exclude`, or anything its fix (if merged or in an open PR) already covers.
+3. Each occurrence that is a real defect becomes a `bug` finding with a reproduction, like any other bug. Put the seed's number in `related_issues` when the seed is an issue in this repository. An occurrence you cannot reproduce is not reported; mention it in `coverage`.
+4. Unrelated defects you notice may still be reported if they are clearly real, but the pattern hunt comes first.
+5. In `coverage`, list each place you checked for the pattern and why it is or is not affected.

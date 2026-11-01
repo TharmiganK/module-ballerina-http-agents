@@ -14,11 +14,20 @@ on:
         description: Produce the report without filing issues, delivering security findings or advancing coverage
         type: boolean
         default: false
+      custom_scopes:
+        description: (find-similar) JSON array of generated scope units; replaces the catalogue selection
+        required: false
+        default: ""
+      seed:
+        description: (find-similar) The issue or PR the custom units were generated from, as issue:<n> or pr:<n>
+        required: false
+        default: ""
 
 permissions: {}
 
+# Scheduled and catalogue runs are serialised; find-similar runs are independent of them and of each other.
 concurrency:
-  group: weekly-analyser
+  group: ${{ inputs.custom_scopes != '' && format('find-similar-{0}', github.run_id) || 'weekly-analyser' }}
   cancel-in-progress: false
 
 env:
@@ -33,6 +42,7 @@ jobs:
       issues: read
     outputs:
       units: ${{ steps.plan.outputs.units }}
+      seed: ${{ inputs.seed }}
       sha: ${{ steps.info.outputs.sha }}
       dry_run: ${{ steps.info.outputs.dry_run }}
       private: ${{ steps.info.outputs.private }}
@@ -50,6 +60,8 @@ jobs:
           SCOPE_INPUT: ${{ inputs.scope }}
           UNITS_PER_RUN: ${{ vars.ANALYSER_UNITS_PER_RUN }}
           UPSTREAM_ISSUE_REPOS: ${{ vars.UPSTREAM_ISSUE_REPOS }}
+          CUSTOM_SCOPES: ${{ inputs.custom_scopes }}
+          SEED: ${{ inputs.seed }}
         run: python3 .github/scripts/agent/analyser-plan.py
       - id: info
         env:
@@ -125,6 +137,9 @@ jobs:
             echo
             echo "- Repository: $REPO"
             echo "- Scope unit: $UNIT (details in agent-context/scope.json)"
+            if jq -e '.seed // empty' agent-context/scope.json > /dev/null; then
+              echo "- Mode: find-similar (seed $(jq -r .seed agent-context/scope.json); follow the 'Find-similar mode' section)"
+            fi
             echo "- Issue trackers to check for duplicates: $REPO ${UPSTREAM_ISSUE_REPOS:-}"
             echo "- Upstream code repository to check for open fix PRs: ${UPSTREAM_CODE_REPO:-none}"
             echo "- Checked-out commit (for permalinks): $SHA"
@@ -300,6 +315,7 @@ jobs:
           DRY_RUN: ${{ needs.plan.outputs.dry_run }}
           SEC_FOUND: ${{ needs.publish-security.outputs.found }}
           SEC_DELIVERED: ${{ needs.publish-security.outputs.delivered }}
+          SEED: ${{ needs.plan.outputs.seed }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
@@ -313,3 +329,60 @@ jobs:
           git -C state add -A
           git -C state commit -q -m "Weekly analyser run $RUN_NUMBER: $(jq -r 'join(", ")' <<< "$UNITS")"
           git -C state push -q origin agent-state
+
+  # find-similar: one summary comment on the issue or PR the units were generated from.
+  report-seed:
+    needs: [plan, publish-issues, update-state]
+    if: always() && needs.plan.result == 'success' && needs.plan.outputs.seed != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      SEED: ${{ needs.plan.outputs.seed }}
+      DRY_RUN: ${{ needs.plan.outputs.dry_run }}
+      RUN_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: analyser-publish
+          path: publish
+      - name: Comment on the seed
+        run: |
+          set -euo pipefail
+          [[ "$SEED" =~ ^(issue|pr):([0-9]+)$ ]] || { echo "::error::Invalid seed $SEED"; exit 1; }
+          number="${BASH_REMATCH[2]}"
+          report=publish/publish-report.json
+          [[ -f "$report" ]] || echo '{"filed": [], "would_file": [], "dropped": []}' > "$report"
+          {
+            echo "## Similar defects"
+            echo
+            if [[ "$(jq '.filed | length' "$report")" != 0 ]]; then
+              echo "Filed, each verified with a reproduction test:"
+              jq -r '.filed[] | "- \(.url) (\(.category))"' "$report"
+            elif [[ "$(jq '.would_file | length' "$report")" != 0 ]]; then
+              echo "Would file (dry run):"
+              jq -r '.would_file[] | "- \(.title) (\(.category))"' "$report"
+            else
+              echo "No similar defects were confirmed."
+            fi
+            if [[ "$(jq '.dropped | length' "$report")" != 0 ]]; then
+              echo
+              echo "<details><summary>Dropped candidates</summary>"
+              echo
+              jq -r '.dropped[] | "- \(.title): \(.reason)"' "$report"
+              echo
+              echo "</details>"
+            fi
+            echo
+            echo "What was examined is in the run report on the \`agent-state\` branch (\`analyser/reports/*-run${RUN_NUMBER}.md\`)."
+            echo
+            echo "---"
+            echo "<sub>Posted by the weekly analyser in find-similar mode · [workflow run]($RUN_URL)</sub>"
+          } > comment.md
+          gh api "repos/$REPO/issues/$number/comments" -F body=@comment.md > /dev/null

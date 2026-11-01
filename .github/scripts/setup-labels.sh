@@ -42,6 +42,7 @@ label "agent/pr-open"       "$AGENT" "Agent: fix PR opened"
 label "agent/failed"        "$AGENT" "Agent: run failed, see the workflow logs"
 label "agent/generated"     "$AGENT" "Created by an AI agent"
 label "agent/auto-fix"      "$AGENT" "Bug fixer addresses review feedback on this agent PR automatically after reviewers go quiet"
+label "agent/find-similar"  "$AGENT" "Search the module for defects similar to this issue or PR (consumed when the search starts)"
 label "agent/qa-skip"       "$AGENT" "Do not run the QA agent automatically on this PR"
 label "agent/qa-trusted"    "$AGENT" "Maintainer reviewed build-logic changes in this fork PR; /qa may run it"
 
