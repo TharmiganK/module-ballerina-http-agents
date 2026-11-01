@@ -103,6 +103,23 @@ split_issue() {
   done
 }
 
+# Validates a close suggestion and appends the hidden marker that agent-lifecycle.yml reads when a maintainer
+# approves it, plus the instructions for the maintainer.
+close_suggestion() {
+  local reason dup
+  reason=$(field .close_reason)
+  dup=$(field .duplicate_of)
+  [[ "$reason" =~ ^(duplicate|not-a-bug|cannot-reproduce|out-of-scope|invalid)$ ]] || die "close-suggested needs a close_reason"
+  if [[ "$reason" == duplicate ]]; then
+    [[ "$dup" =~ ^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#[0-9]+$ ]] || die "A duplicate needs duplicate_of (#<n> or owner/repo#<n>)"
+    [[ "$dup" != "#$NUMBER" ]] || die "An issue cannot duplicate itself"
+  fi
+  ! grep -q '^## Plan v' comment.md || die "A close suggestion must not contain a plan"
+  printf '\n\n> [!NOTE]\n> **Suggested: close as %s%s.** A maintainer can add `agent/approved` to close it, comment `/agent <reason>` to ask for a different outcome, or close it by hand.\n' \
+    "${reason//-/ }" "${dup:+ of $dup}" >> comment.md
+  printf '\n<!-- bug-fixer:close reason=%s of=%s -->' "$reason" "$dup" >> comment.md
+}
+
 latest_plan_version() {
   gh api --paginate "repos/$REPO/issues/$NUMBER/comments" \
     --jq ".[] | select(.user.login == \"$BOT\") | .body" \
@@ -204,14 +221,16 @@ case "$MODE" in
       exit 0
     fi
     case "$classification" in
-      bug)         [[ "$outcome" == plan-ready || "$outcome" == needs-info ]] || die "A bug must end plan-ready or needs-info, not $outcome" ;;
+      bug)         [[ "$outcome" =~ ^(plan-ready|needs-info|close-suggested)$ ]] || die "A bug must end plan-ready, needs-info or close-suggested, not $outcome" ;;
       improvement|feature|question)
-                   [[ "$outcome" == analysed ]] || die "A $classification must end analysed, not $outcome" ;;
+                   [[ "$outcome" =~ ^(analysed|close-suggested)$ ]] || die "A $classification must end analysed or close-suggested, not $outcome" ;;
       *)           die "Invalid classification: $classification" ;;
     esac
     field .comment | strip_markers > comment.md
     [[ -s comment.md ]] || die "Empty comment"
-    if [[ "$outcome" == analysed ]]; then
+    if [[ "$outcome" == close-suggested ]]; then
+      close_suggestion
+    elif [[ "$outcome" == analysed ]]; then
       ! grep -q '^## Plan v' comment.md || die "An $classification analysis must not contain a '## Plan v' section"
     elif [[ "$outcome" == plan-ready ]]; then
       grep -q '^## Plan v1' comment.md || die "plan-ready output has no '## Plan v1' section"
@@ -225,9 +244,10 @@ case "$MODE" in
     fi
     footer >> comment.md
     post_issue_comment "$NUMBER" comment.md
-    remove_labels agent/investigating agent/plan-ready agent/needs-info agent/analysed agent/failed
-    # The agent's classification becomes the Type label only when no maintainer has set one.
-    if [[ -z "$(gh api "repos/$REPO/issues/$NUMBER" --jq '[.labels[].name | select(startswith("Type/"))] | first // empty')" ]]; then
+    remove_labels agent/investigating agent/plan-ready agent/needs-info agent/analysed agent/close-suggested agent/failed
+    # The agent's classification becomes the Type label only when no maintainer has set one (and the issue is not
+    # about to be closed).
+    if [[ "$outcome" != close-suggested && -z "$(gh api "repos/$REPO/issues/$NUMBER" --jq '[.labels[].name | select(startswith("Type/"))] | first // empty')" ]]; then
       case "$classification" in
         bug) add_labels Type/Bug ;; improvement) add_labels Type/Improvement ;;
         feature) add_labels Type/NewFeature ;; question) add_labels Type/Question ;;
@@ -239,7 +259,7 @@ case "$MODE" in
   discuss)
     require_result
     outcome=$(field .outcome)
-    [[ "$outcome" =~ ^(plan-ready|needs-info|analysed|no-change)$ ]] || die "Invalid outcome: $outcome"
+    [[ "$outcome" =~ ^(plan-ready|needs-info|analysed|close-suggested|no-change)$ ]] || die "Invalid outcome: $outcome"
     field .comment | strip_markers > comment.md
     [[ -s comment.md ]] || die "Empty comment"
     current=$(latest_plan_version)
@@ -253,6 +273,8 @@ case "$MODE" in
       else
         outcome=needs-info
       fi
+    elif [[ "$outcome" == close-suggested ]]; then
+      close_suggestion
     else
       ! grep -q '^## Plan v' comment.md || die "Comment contains a plan but new_plan_version is not set"
       [[ "$outcome" != plan-ready || "$current" -gt 0 ]] || die "plan-ready without any plan"
@@ -260,7 +282,7 @@ case "$MODE" in
     footer >> comment.md
     post_issue_comment "$NUMBER" comment.md
     if [[ "$outcome" != no-change ]]; then
-      remove_labels agent/plan-ready agent/needs-info agent/analysed agent/failed
+      remove_labels agent/plan-ready agent/needs-info agent/analysed agent/close-suggested agent/failed
       add_labels "agent/$outcome"
     fi
     ;;

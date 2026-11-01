@@ -28,6 +28,12 @@ label "Area/Security"       "186872" "Auth, SSL/TLS and other security features"
 label "Area/GraalVM"        "186872" "Native image compatibility"
 label "Area/Docs"           "186872" "API docs and module docs"
 label "Area/Spec"           "186872" "Specification (docs/spec/spec.md); combine with a Type/* label"
+
+# Closing reasons (ballerina-platform/ballerina-library names); set when a close suggestion is approved
+label "Resolution/Duplicate"        "cfd3d7" "Duplicate of another issue"
+label "Resolution/NotABug"          "cfd3d7" "Works as specified"
+label "Resolution/CannotReproduce"  "cfd3d7" "Could not be reproduced"
+label "Reason/Invalid"              "cfd3d7" "Issue is invalid"
 label "module/http"         "0e8a16" ""
 
 # Agent lifecycle labels
@@ -39,6 +45,8 @@ label "agent/needs-info"    "$AGENT" "Issue analyser: could not reproduce, or ne
 label "agent/plan-ready"    "$AGENT" "Issue analyser: root cause and fix plan posted, awaiting approval"
 label "agent/analysed"      "$AGENT" "Issue analyser: proposal or answer posted (improvement, feature or question)"
 label "agent/split"         "$AGENT" "Issue analyser: split into linked sub-issues"
+label "agent/close-suggested" "$AGENT" "Issue analyser: suggests closing; agent/approved closes it with the suggested reason"
+label "agent/fixed"         "$AGENT" "Bug fixer: the fix PR was merged"
 label "agent/implementing"  "$AGENT" "Bug fixer: implementing the approved plan"
 label "agent/pr-open"       "$AGENT" "Bug fixer: fix PR opened"
 label "agent/failed"        "$AGENT" "Agent: run failed, see the workflow logs"

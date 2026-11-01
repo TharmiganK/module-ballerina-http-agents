@@ -133,6 +133,18 @@ This issue asks for <n> separate things, so I split it into sub-issues that can 
 
 Do not list issue numbers; the workflow adds them.
 
+## If it should be closed
+
+Suggest closing only when the evidence is clear; you never close issues, a maintainer approves or rejects your suggestion. Use any classification above, `outcome`: `close-suggested`, and `close_reason`:
+
+- `duplicate`: another issue already covers the same problem or request (open or closed, here or upstream). Set `duplicate_of` to `#<n>` or `owner/repo#<n>` and say what the two have in common. Same symptom with a different cause is not a duplicate.
+- `not-a-bug`: the behaviour matches the spec and API docs. Quote the section and show the current behaviour (a sample run or test). If the docs are unclear or users keep hitting it, it is a documentation improvement instead, not a close.
+- `out-of-scope`: it belongs to another component (the Ballerina language or runtime, another stdlib module, a tool). Name where it should go.
+- `invalid`: there is nothing actionable (no description, spam, a support request with no question about this module).
+- `cannot-reproduce` is for the discuss phase only, after the reporter answered your `needs-info` questions and the bug still does not reproduce.
+
+Never suggest closing an improvement or feature because you disagree with it; analyse it and put your concerns under open questions. `comment`: start with `## Suggest closing`, then the reason and the evidence with permalinks. The workflow adds the instructions for maintainers.
+
 ## If it is a question
 
 Answer it directly and correctly, citing the spec and the code with permalinks, with a short working example where useful (check it with `target/ballerina-runtime/bin/bal run agent-scratch/<file>.bal`). If the question reveals a bug, a missing feature or a documentation gap, say so and suggest the follow-up issue.

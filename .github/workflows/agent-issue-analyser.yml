@@ -58,7 +58,7 @@ jobs:
           labels=$(gh api "repos/$REPO/issues/$number" --jq '[.labels[].name]')
           has() { jq -e --arg l "$1" 'index($l)' <<< "$labels" > /dev/null; }
           # Issues carry a single agent/* state label; trigger labels are consumed when a run starts.
-          STATES=(agent/investigate agent/investigating agent/plan-ready agent/needs-info agent/analysed agent/split agent/approved agent/implementing agent/pr-open agent/failed)
+          STATES=(agent/investigate agent/investigating agent/plan-ready agent/needs-info agent/analysed agent/close-suggested agent/split agent/approved agent/implementing agent/pr-open agent/failed)
           label() { gh api "repos/$REPO/issues/$number/labels" -f "labels[]=$1" > /dev/null; }
           unlabel() { for l in "$@"; do gh api -X DELETE "repos/$REPO/issues/$number/labels/$(jq -rn --arg s "$l" '$s|@uri')" > /dev/null 2>&1 || true; done; }
 
@@ -67,7 +67,7 @@ jobs:
             comment_id=$(jq -r .comment.id "$ev")
             if [[ "$(jq -r '.comment.body | split("\n")[0] | split(" ")[0] | gsub("\\s"; "")' "$ev")" != /agent ]]; then
               echo "::notice::Comment does not start with the /agent command"
-            elif has agent/plan-ready || has agent/needs-info || has agent/analysed || has agent/failed; then
+            elif has agent/plan-ready || has agent/needs-info || has agent/analysed || has agent/close-suggested || has agent/failed; then
               phase=discuss
             else
               echo "::notice::#$number is not waiting for discussion (not analysed yet, a run in progress, or a PR is open)"

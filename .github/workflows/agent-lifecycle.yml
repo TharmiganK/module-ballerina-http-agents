@@ -1,0 +1,62 @@
+name: Agent - Lifecycle
+run-name: >-
+  ${{ github.event_name == 'pull_request_target' && (github.event.pull_request.merged && format('PR #{0} merged', github.event.pull_request.number) || format('PR #{0} {1}', github.event.pull_request.number, github.event.action))
+  || github.event.action == 'labeled' && github.event.label.name == 'agent/approved' && contains(github.event.issue.labels.*.name, 'agent/close-suggested') && format('Close #{0} as suggested', github.event.issue.number)
+  || github.event.action == 'labeled' && format('Ignore label {0} on #{1}', github.event.label.name, github.event.issue.number)
+  || format('Issue #{0} {1}', github.event.issue.number, github.event.action) }}
+
+# Fixed state changes, no agent: agent PR merged (issue -> agent/fixed, branch deleted) or closed without merging
+# (issue -> agent/plan-ready) or reopened; issue closed (transient agent labels removed, split parent closed when its
+# last sub-issue closes) or reopened; agent/approved on agent/close-suggested (issue closed with the suggested reason).
+# Design: docs/proposals/agents/issue-agents.md
+on:
+  # pull_request_target runs this file from the default branch; PR code is never checked out.
+  pull_request_target:
+    types: [closed, reopened]
+  issues:
+    types: [closed, reopened, labeled]
+
+permissions: {}
+
+jobs:
+  lifecycle:
+    if: >-
+      (github.event_name == 'pull_request_target' && startsWith(github.event.pull_request.head.ref, 'agent/issue-'))
+      || (github.event_name == 'issues' && github.event.action != 'labeled'
+        && contains(toJSON(github.event.issue.labels.*.name), 'agent/'))
+      || (github.event_name == 'issues' && github.event.action == 'labeled'
+        && github.event.label.name == 'agent/approved'
+        && contains(github.event.issue.labels.*.name, 'agent/close-suggested'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: agent-lifecycle-${{ github.event.issue.number || github.event.pull_request.number }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      MERGED: ${{ github.event.pull_request.merged }}
+      ACTOR: ${{ github.actor }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Apply the state change
+        run: |
+          set -euo pipefail
+          case "$GITHUB_EVENT_NAME/$(jq -r .action "$GITHUB_EVENT_PATH")" in
+            pull_request_target/closed)   mode=pr-closed ;;
+            pull_request_target/reopened) mode=pr-reopened ;;
+            issues/closed)                mode=issue-closed ;;
+            issues/reopened)              mode=issue-reopened ;;
+            issues/labeled)               mode=approve-close ;;
+          esac
+          number=$(jq -r '(.pull_request // .issue).number' "$GITHUB_EVENT_PATH")
+          .github/scripts/agent/lifecycle.sh "$mode" "$number"

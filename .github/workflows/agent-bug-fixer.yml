@@ -5,6 +5,7 @@ run-name: >-
   || github.event_name == 'pull_request_review' && format('Ignore review on PR #{0}', github.event.pull_request.number)
   || github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '/agent') && format('Address feedback on PR #{0}', github.event.issue.number)
   || github.event_name == 'issue_comment' && format('Ignore comment on #{0}', github.event.issue.number)
+  || github.event.label.name == 'agent/approved' && contains(github.event.issue.labels.*.name, 'agent/close-suggested') && format('Ignore approval of the close suggestion on #{0}', github.event.issue.number)
   || github.event.label.name == 'agent/approved' && format('Fix #{0}: {1}', github.event.issue.number, github.event.issue.title)
   || format('Ignore label {0} on #{1}', github.event.label.name, github.event.issue.number) }}
 
@@ -80,7 +81,7 @@ jobs:
           set -euo pipefail
           ev="$GITHUB_EVENT_PATH"
           first_word() { jq -r '. // "" | split("\n")[0] | split(" ")[0] | gsub("\\s"; "")'; }
-          STATES=(agent/investigate agent/investigating agent/plan-ready agent/needs-info agent/analysed agent/split agent/approved agent/implementing agent/pr-open agent/failed)
+          STATES=(agent/investigate agent/investigating agent/plan-ready agent/needs-info agent/analysed agent/close-suggested agent/split agent/approved agent/implementing agent/pr-open agent/failed)
           label() { gh api "repos/$REPO/issues/$number/labels" -f "labels[]=$1" > /dev/null; }
           unlabel() { for l in "$@"; do gh api -X DELETE "repos/$REPO/issues/$number/labels/$(jq -rn --arg s "$l" '$s|@uri')" > /dev/null 2>&1 || true; done; }
           # An open PR on an agent/issue-<n> branch; sets ref and issue.
@@ -105,7 +106,9 @@ jobs:
             issues)
               labels=$(jq -c '[.issue.labels[].name]' "$ev")
               has() { jq -e --arg l "$1" 'index($l)' <<< "$labels" > /dev/null; }
-              if (has agent/plan-ready || has agent/failed) && ! has agent/pr-open && ! has agent/implementing; then
+              if has agent/close-suggested; then
+                echo "::notice::Approval of a close suggestion is handled by agent-lifecycle.yml"
+              elif (has agent/plan-ready || has agent/failed) && ! has agent/pr-open && ! has agent/implementing; then
                 phase=implement
                 unlabel "${STATES[@]}"
                 label agent/implementing

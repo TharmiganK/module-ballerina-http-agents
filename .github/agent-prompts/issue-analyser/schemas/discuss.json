@@ -12,6 +12,7 @@
         "plan-ready",
         "needs-info",
         "analysed",
+        "close-suggested",
         "no-change"
       ]
     },
@@ -30,6 +31,21 @@
     },
     "test_filter": {
       "type": "string",
+      "maxLength": 200
+    },
+    "close_reason": {
+      "type": "string",
+      "enum": [
+        "duplicate",
+        "not-a-bug",
+        "cannot-reproduce",
+        "out-of-scope",
+        "invalid"
+      ]
+    },
+    "duplicate_of": {
+      "type": "string",
+      "pattern": "^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#[0-9]+$",
       "maxLength": 200
     }
   }
