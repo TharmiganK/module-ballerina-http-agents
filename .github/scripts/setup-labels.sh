@@ -44,7 +44,7 @@ label "agent/pr-open"       "$AGENT" "Bug fixer: fix PR opened"
 label "agent/failed"        "$AGENT" "Agent: run failed, see the workflow logs"
 label "agent/generated"     "$AGENT" "Created by an AI agent"
 label "agent/auto-fix"      "$AGENT" "Maintainer: the bug fixer addresses review feedback on this agent PR after reviewers go quiet"
-label "agent/find-similar"  "$AGENT" "Maintainer: the defect scanner searches for defects similar to this issue or PR (consumed when the search starts)"
+label "agent/find-similar"  "$AGENT" "Maintainer: the defect scanner looks for defects like this one (removed when the search starts)"
 label "agent/qa-skip"       "$AGENT" "Maintainer: do not run the QA agent automatically on this PR"
 label "agent/qa-trusted"    "$AGENT" "Maintainer reviewed build-logic changes in this fork PR; /qa may run it"
 
