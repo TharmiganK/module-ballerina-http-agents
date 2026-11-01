@@ -213,9 +213,13 @@ case "$MODE" in
       (( open_prs == 0 )) || die "An open PR already uses $branch"
       echo "::warning::Replacing leftover branch $branch (was $existing) that has no open PR"
     fi
-    git fetch --no-tags --depth=1 origin "$base"
-    git checkout -q -b "$branch" "$base"
-    apply_patch "$base" true
+    # Apply on the current master rather than the agent's base: a branch whose workflow files differ from master
+    # (because master moved during the run) is rejected for GITHUB_TOKEN as a workflow change.
+    git fetch --no-tags --depth=50 origin master
+    tip=$(git rev-parse FETCH_HEAD)
+    [[ "$tip" == "$base" ]] || echo "::notice::master moved from ${base:0:12} to ${tip:0:12} during the run; applying on top"
+    git checkout -q -b "$branch" "$tip"
+    apply_patch "$tip" true
     tests=$(ci_tests)
     {
       field .pr_body | strip_markers
