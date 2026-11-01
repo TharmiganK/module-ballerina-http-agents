@@ -26,10 +26,6 @@ on:
 
 permissions: {}
 
-concurrency:
-  group: auto-fix-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}
-  cancel-in-progress: true
-
 jobs:
   wait-and-dispatch:
     if: >-
@@ -41,6 +37,11 @@ jobs:
         && contains(github.event.issue.labels.*.name, 'agent/auto-fix'))
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    # Job-level, so only runs that actually wait (job condition true) restart the timer; unrelated events such as
+    # other labels on the PR create skipped runs that must not cancel a waiting one.
+    concurrency:
+      group: auto-fix-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}
+      cancel-in-progress: true
     permissions:
       contents: read
       pull-requests: write
