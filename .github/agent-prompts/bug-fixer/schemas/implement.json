@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status"],
+  "properties": {
+    "status": {"type": "string", "enum": ["done", "blocked"]},
+    "blocked_reason": {"type": "string", "maxLength": 20000},
+    "pr_title": {"type": "string", "maxLength": 120},
+    "pr_body": {"type": "string", "maxLength": 60000},
+    "ci_tests": {"type": "array", "maxItems": 5, "items": {"type": "string"}}
+  }
+}

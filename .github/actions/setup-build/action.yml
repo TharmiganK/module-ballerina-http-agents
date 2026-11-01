@@ -1,0 +1,21 @@
+name: Set up and build
+description: Installs JDK 25, restores Gradle and Ballerina caches, and builds all modules without tests so that target/ballerina-runtime contains the http package from this checkout. Requires packageUser/packagePAT in the job env.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-java@v6
+      with:
+        distribution: temurin
+        java-version: "25"
+
+    - uses: gradle/actions/setup-gradle@v6
+
+    - uses: actions/cache@v5
+      with:
+        path: ~/.ballerina
+        key: ballerina-${{ runner.os }}-${{ hashFiles('gradle.properties', '**/Dependencies.toml') }}
+        restore-keys: ballerina-${{ runner.os }}-
+
+    - name: Build without tests
+      shell: bash
+      run: .github/scripts/run-tests.sh build

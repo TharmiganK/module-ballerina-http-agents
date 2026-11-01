@@ -1,0 +1,86 @@
+name: Agent - PR CI
+
+# Targeted CI for this mirror. Builds all modules (compile, checkstyle, spotbugs) and runs the test packages
+# listed in the PR body marker `<!-- ci-tests: <package>[:<groups>] native[:<filter>] compiler-plugin[:<filter>] -->`.
+# Agent PRs are opened with GITHUB_TOKEN, which does not trigger pull_request runs, so the bug fixer dispatches
+# this workflow explicitly and the result is reported as a commit status on the PR head.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: agent-pr-ci-${{ github.event.pull_request.number || inputs.pr }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    env:
+      packageUser: ${{ secrets.PACKAGE_USER }}
+      packagePAT: ${{ secrets.PACKAGE_PAT }}
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number || inputs.pr }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Report pending status
+        if: github.event_name == 'workflow_dispatch'
+        run: gh api "repos/$REPO/statuses/$(git rev-parse HEAD)" -f state=pending -f context=agent-pr-ci -f target_url="$RUN_URL" > /dev/null
+
+      - uses: ./.github/actions/setup-build
+
+      - name: Run tests from the PR marker
+        run: |
+          set -euo pipefail -o noglob
+          marker=$(gh pr view "$PR" --repo "$REPO" --json body --jq .body \
+            | grep -oE '<!-- ci-tests:[^>]*-->' | tail -n 1 | sed -E 's/<!-- ci-tests:(.*)-->/\1/' || true)
+          if [[ -z "${marker// }" ]]; then
+            echo "No ci-tests marker in the PR body; build only."
+            exit 0
+          fi
+          for entry in $marker; do
+            [[ "$entry" =~ ^([a-z0-9-]+)(:([A-Za-z0-9_.*,]+))?$ ]] || { echo "::error::Invalid ci-tests entry: $entry"; exit 1; }
+            pkg="${BASH_REMATCH[1]}" arg="${BASH_REMATCH[3]}"
+            echo "::group::$entry"
+            case "$pkg" in
+              native|compiler-plugin) .github/scripts/run-tests.sh "$pkg" "$arg" ;;
+              *)
+                [[ -d "ballerina-tests/$pkg" ]] || { echo "::error::Unknown test package: $pkg"; exit 1; }
+                .github/scripts/run-tests.sh bal "$pkg" "$arg"
+                ;;
+            esac
+            echo "::endgroup::"
+          done
+
+      - name: Upload Ballerina test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports
+          path: ballerina-tests/*/target/report/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Report final status
+        if: always() && github.event_name == 'workflow_dispatch'
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          state=$([[ "$JOB_STATUS" == success ]] && echo success || echo failure)
+          gh api "repos/$REPO/statuses/$(git rev-parse HEAD)" -f state="$state" -f context=agent-pr-ci -f target_url="$RUN_URL" > /dev/null

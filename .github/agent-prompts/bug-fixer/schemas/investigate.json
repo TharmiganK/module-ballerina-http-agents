@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["outcome", "comment"],
+  "properties": {
+    "outcome": {"type": "string", "enum": ["plan-ready", "needs-info"]},
+    "comment": {"type": "string", "minLength": 1, "maxLength": 60000},
+    "test_package": {"type": "string"}
+  }
+}

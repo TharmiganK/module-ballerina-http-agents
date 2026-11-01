@@ -4,7 +4,7 @@ _Owners_: @TharmiganK
 _Reviewers_: @TharmiganK  
 _Created_: 2026/11/01  
 _Updated_: 2026/11/01  
-_Status_: Approved for PoC
+_Status_: Implemented for PoC
 
 ## Summary
 
@@ -92,7 +92,7 @@ All phases live in `.github/workflows/agent-bug-fixer.yml`.
 
 Review handling uses `pull_request_review: submitted` rather than `pull_request_review_comment`: a review with several comments fires one review event but one comment event per comment, and a standalone line comment also creates a review. This yields one run per review.
 
-Concurrency: `group: bug-fixer-issue-<number>` for issue phases and `bug-fixer-pr-<number>` for review, with `cancel-in-progress: false`, so a comment posted during an investigation is processed after it.
+A `gate` job routes each event to a phase using the labels in the event payload and sets the in-progress label. A comment posted while an investigation or implementation is running is skipped (the issue has no `agent/plan-ready` or `agent/needs-info` yet), and the gate logs a notice; the maintainer comments again once the run has posted. The agent job uses `concurrency: bug-fixer-<number>` with `cancel-in-progress: false`; GitHub keeps at most one pending run per group, so of several comments queued behind a running discuss phase only the newest is processed.
 
 ### Label lifecycle
 
@@ -246,7 +246,7 @@ Passed through `claude_args: --allowedTools`.
 | Tool | investigate | discuss | implement | review |
 |---|---|---|---|---|
 | `Read`, `Glob`, `Grep` | yes | yes | yes | yes |
-| `Edit`, `Write` | yes (tests only, by prompt) | no | yes | yes |
+| `Edit`, `Write` | yes (tests and scratch only, by prompt) | yes (to recreate the reproduction test) | yes | yes |
 | `Bash(.github/scripts/run-tests.sh:*)` | yes | yes | yes | yes |
 | `Bash(target/ballerina-runtime/bin/bal:*)` | yes | yes | yes | yes |
 | `Bash(git diff/log/show/status/blame:*)` | yes | yes | yes | yes |

@@ -53,3 +53,8 @@ compiler-plugin-tests/**/target
 
 # integration-tests related ignores
 integration-tests/lib
+
+# AI agent workflow scratch directories
+agent-context/
+agent-output/
+agent-scratch/

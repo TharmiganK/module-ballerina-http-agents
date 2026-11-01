@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["outcome", "comment"],
+  "properties": {
+    "outcome": {"type": "string", "enum": ["plan-ready", "needs-info", "no-change"]},
+    "comment": {"type": "string", "minLength": 1, "maxLength": 60000},
+    "new_plan_version": {"type": "integer", "minimum": 2}
+  }
+}
