@@ -2,6 +2,7 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
+    "classification",
     "outcome",
     "comment"
   ],
@@ -10,7 +11,8 @@
       "type": "string",
       "enum": [
         "plan-ready",
-        "needs-info"
+        "needs-info",
+        "analysed"
       ]
     },
     "comment": {
@@ -25,6 +27,15 @@
     "test_filter": {
       "type": "string",
       "maxLength": 200
+    },
+    "classification": {
+      "type": "string",
+      "enum": [
+        "bug",
+        "improvement",
+        "feature",
+        "question"
+      ]
     }
   }
 }

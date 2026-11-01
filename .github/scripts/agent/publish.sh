@@ -138,10 +138,18 @@ case "$MODE" in
   investigate)
     require_result
     outcome=$(field .outcome)
-    [[ "$outcome" == plan-ready || "$outcome" == needs-info ]] || die "Invalid outcome: $outcome"
+    classification=$(field .classification)
+    case "$classification" in
+      bug)         [[ "$outcome" == plan-ready || "$outcome" == needs-info ]] || die "A bug must end plan-ready or needs-info, not $outcome" ;;
+      improvement|feature|question)
+                   [[ "$outcome" == analysed ]] || die "A $classification must end analysed, not $outcome" ;;
+      *)           die "Invalid classification: $classification" ;;
+    esac
     field .comment | strip_markers > comment.md
     [[ -s comment.md ]] || die "Empty comment"
-    if [[ "$outcome" == plan-ready ]]; then
+    if [[ "$outcome" == analysed ]]; then
+      ! grep -q '^## Plan v' comment.md || die "An $classification analysis must not contain a '## Plan v' section"
+    elif [[ "$outcome" == plan-ready ]]; then
       grep -q '^## Plan v1' comment.md || die "plan-ready output has no '## Plan v1' section"
       if verify_repro; then
         printf '\n<!-- bug-fixer:plan v=1 -->' >> comment.md
@@ -153,14 +161,21 @@ case "$MODE" in
     fi
     footer >> comment.md
     post_issue_comment "$NUMBER" comment.md
-    remove_labels agent/investigating agent/plan-ready agent/needs-info agent/failed
+    remove_labels agent/investigating agent/plan-ready agent/needs-info agent/analysed agent/failed
+    # The agent's classification becomes the Type label only when no maintainer has set one.
+    if [[ -z "$(gh api "repos/$REPO/issues/$NUMBER" --jq '[.labels[].name | select(startswith("Type/"))] | first // empty')" ]]; then
+      case "$classification" in
+        bug) add_labels Type/Bug ;; improvement) add_labels Type/Improvement ;;
+        feature) add_labels Type/NewFeature ;; question) add_labels Type/Question ;;
+      esac
+    fi
     add_labels "agent/$outcome"
     ;;
 
   discuss)
     require_result
     outcome=$(field .outcome)
-    [[ "$outcome" =~ ^(plan-ready|needs-info|no-change)$ ]] || die "Invalid outcome: $outcome"
+    [[ "$outcome" =~ ^(plan-ready|needs-info|analysed|no-change)$ ]] || die "Invalid outcome: $outcome"
     field .comment | strip_markers > comment.md
     [[ -s comment.md ]] || die "Empty comment"
     current=$(latest_plan_version)
@@ -181,7 +196,7 @@ case "$MODE" in
     footer >> comment.md
     post_issue_comment "$NUMBER" comment.md
     if [[ "$outcome" != no-change ]]; then
-      remove_labels agent/plan-ready agent/needs-info agent/failed
+      remove_labels agent/plan-ready agent/needs-info agent/analysed agent/failed
       add_labels "agent/$outcome"
     fi
     ;;

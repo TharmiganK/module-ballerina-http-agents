@@ -37,6 +37,7 @@ label "agent/approved"      "$AGENT" "Maintainer: approve the agent's current pl
 label "agent/investigating" "$AGENT" "Agent: investigation in progress"
 label "agent/needs-info"    "$AGENT" "Agent: could not reproduce or needs more details"
 label "agent/plan-ready"    "$AGENT" "Agent: root cause and fix plan posted, awaiting approval"
+label "agent/analysed"      "$AGENT" "Agent: improvement, feature or question analysed; proposal or answer posted"
 label "agent/implementing"  "$AGENT" "Agent: implementing the approved plan"
 label "agent/pr-open"       "$AGENT" "Agent: fix PR opened"
 label "agent/failed"        "$AGENT" "Agent: run failed, see the workflow logs"

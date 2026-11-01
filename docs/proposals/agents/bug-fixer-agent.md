@@ -83,7 +83,7 @@ All phases live in `.github/workflows/agent-bug-fixer.yml`.
 
 | Phase | Trigger | Job `if:` conditions |
 |---|---|---|
-| investigate | `issues: [labeled]` | label is `agent/investigate`; issue has `Type/Bug`; no run in progress and no open agent PR |
+| investigate | `issues: [labeled]` | label is `agent/investigate` on any issue (the agent classifies it first, see [Issue analysis](#issue-analysis)); no run in progress and no open agent PR |
 | discuss | `issue_comment: [created]` | the comment's first word is the `/bug-fixer` command; not a PR; issue is `agent/plan-ready`, `agent/needs-info` or `agent/failed`; comment author type is not `Bot`; `author_association` is `OWNER`, `MEMBER` or `COLLABORATOR` |
 | implement | `issues: [labeled]` | label is `agent/approved`; issue is `agent/plan-ready` (or `agent/failed` after an approved plan); no open agent PR |
 | review (auto) | `workflow_dispatch` with input `pr`, from `agent-auto-fix.yml` | PR is an open agent PR with `agent/auto-fix` and has actionable review threads |
@@ -107,6 +107,7 @@ An issue carries a single `agent/*` label at a time, showing its state. The two 
 | `agent/investigating` | Workflow | Investigation running. |
 | `agent/plan-ready` | Publish job | Root cause and a plan were posted. |
 | `agent/needs-info` | Publish job | Could not reproduce or needs details. |
+| `agent/analysed` | Publish job | Classified as an improvement, feature or question; analysis and proposal (or answer) posted. Not implemented automatically. |
 | `agent/approved` | Maintainer (trigger) | Implement the latest plan version posted before this label was added. Replaced by `agent/implementing` when the run starts. |
 | `agent/implementing` | Workflow | Implementation running. |
 | `agent/pr-open` | Publish job | Fix PR opened. |
@@ -182,6 +183,19 @@ The comment has these sections: Verdict; Reproduction (test code in a collapsed 
 For `plan-ready`, the publish job requires `reproduced`: it appends a "Reproduction verified by the workflow" note with the command and failure message, then the plan marker. Otherwise it downgrades the outcome to `needs-info` and posts an "Investigation (unverified)" comment with the agent's report collapsed and its plan headings renamed to "Proposed plan (unverified)", with no marker, so it cannot be approved. This implements the rule that an unreproduced finding is a question, not a bug.
 
 The publish job posts the comment, adds `agent/plan-ready` or `agent/needs-info`, and removes `agent/investigating`.
+
+#### Issue analysis
+
+`agent/investigate` works on any issue, with or without a `Type/*` label. The investigate run first classifies the issue, then handles it in the same run (one build, no hand-off):
+
+| Classification | Handling | Outcome and state | Type label (added only if none is set) |
+|---|---|---|---|
+| `bug` | Reproduction, code flow, root cause, Plan v1, verified by the workflow as below | `plan-ready` or `needs-info` | `Type/Bug` |
+| `improvement` | Use case, current behaviour with permalinks, related work, a proposal (API, behaviour, implementation, compatibility and spec impact, tests), alternatives and open questions | `analysed` | `Type/Improvement` |
+| `feature` | As for improvements | `analysed` | `Type/NewFeature` |
+| `question` | A direct answer with spec and code references and a checked example | `analysed` | `Type/Question` |
+
+A `Type/*` label set by a maintainer is kept; the agent follows it unless clearly wrong and then only says so in its comment. Behaviour that contradicts the spec or the API docs is a bug even when reported as a feature request. Proposals contain no `## Plan v` section and are not implemented automatically: `agent/approved` on an `agent/analysed` issue is declined with a comment. `/bug-fixer` comments refine an analysis or proposal like a plan; if the discussion shows the issue is a bug, the agent posts a verified Plan v1 and the issue moves to `agent/plan-ready`.
 
 #### Discuss
 

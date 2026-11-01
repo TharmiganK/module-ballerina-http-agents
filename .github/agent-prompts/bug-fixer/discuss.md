@@ -13,6 +13,7 @@ A user with write access commented on an issue you are investigating. The trigge
 
 - `outcome`:
   - `plan-ready` when there is a plan ready for approval (unchanged or revised),
+  - `analysed` when the issue is an improvement, feature or question (state `agent/analysed`) and you answered or revised the analysis or proposal; write a revised proposal in full under `## Proposal (revised)`, never as a `## Plan v` section,
   - `needs-info` when you still cannot reproduce or need answers before planning,
   - `no-change` when the comment needs only a reply and the issue state should stay as it is.
 - `new_plan_version`: set only when you revise the plan; it must be the latest plan version plus one. When there is no plan yet (the issue is `agent/needs-info`) and the new information lets you reproduce the bug, set it to `1` and write `## Plan v1`.
@@ -33,3 +34,5 @@ _Changes from v<N-1>: <one line>_
 ```
 
 Do not write a `## Plan v` heading unless you set `new_plan_version`.
+
+If the discussion shows that an analysed improvement or feature is actually a bug (behaviour contradicts the spec or the API docs), treat it as a bug: reproduce it, and post `## Plan v1` with `new_plan_version: 1`, `outcome: plan-ready` and `test_package`; the workflow verifies the reproduction before the plan becomes approvable.

@@ -68,7 +68,7 @@ jobs:
           has() { jq -e --arg l "$1" '[(.issue // .pull_request).labels[].name] | index($l)' "$ev" > /dev/null; }
           command_given() { [[ "$(jq -r "$1 // \"\" | split(\"\\n\")[0] | split(\" \")[0] | gsub(\"\\\\s\"; \"\")" "$ev")" == /bug-fixer ]]; }
           # Issues carry a single agent/* state label; trigger labels are consumed when a run starts.
-          STATES=(agent/investigate agent/investigating agent/plan-ready agent/needs-info agent/approved agent/implementing agent/pr-open agent/failed)
+          STATES=(agent/investigate agent/investigating agent/plan-ready agent/needs-info agent/analysed agent/approved agent/implementing agent/pr-open agent/failed)
           label() { gh api "repos/$REPO/issues/$number/labels" -f "labels[]=$1" > /dev/null; }
           unlabel() { for l in "$@"; do gh api -X DELETE "repos/$REPO/issues/$number/labels/$(jq -rn --arg s "$l" '$s|@uri')" > /dev/null 2>&1 || true; done; }
 
@@ -83,9 +83,8 @@ jobs:
           case "$GITHUB_EVENT_NAME" in
             issues)
               if [[ "$(jq -r .label.name "$ev")" == agent/investigate ]]; then
-                if ! has Type/Bug; then
-                  echo "::notice::#$number is not labelled Type/Bug"
-                elif has agent/investigating || has agent/implementing || has agent/pr-open; then
+                # Any issue: the agent classifies it (bug, improvement, feature, question) before investigating.
+                if has agent/investigating || has agent/implementing || has agent/pr-open; then
                   echo "::notice::#$number already has an agent run in progress or an open PR"
                   unlabel agent/investigate
                 else
@@ -99,6 +98,10 @@ jobs:
                   unlabel "${STATES[@]}"
                   label agent/implementing
                 else
+                  if has agent/analysed; then
+                    gh api "repos/$REPO/issues/$number/comments" \
+                      -f body="Implementing improvement and feature proposals is not automated yet. A maintainer can implement the proposal, or open a bug-style plan by commenting \`/bug-fixer\`." > /dev/null
+                  fi
                   echo "::notice::agent/approved needs agent/plan-ready (or agent/failed after an approved plan) and no open agent PR"
                   unlabel agent/approved
                 fi
@@ -115,7 +118,7 @@ jobs:
                   phase=review
                   issue="${BASH_REMATCH[1]}"
                 fi
-              elif has agent/plan-ready || has agent/needs-info || has agent/failed; then
+              elif has agent/plan-ready || has agent/needs-info || has agent/analysed || has agent/failed; then
                 phase=discuss
               else
                 echo "::notice::#$number is not waiting for discussion (no plan yet, a run in progress, or a PR is open)"
@@ -305,7 +308,7 @@ jobs:
       - name: Verify reproduction
         if: >-
           steps.claude.outcome == 'success'
-          && (env.PHASE == 'investigate'
+          && ((env.PHASE == 'investigate' && fromJSON(steps.claude.outputs.structured_output || '{}').outcome == 'plan-ready')
             || (env.PHASE == 'discuss' && fromJSON(steps.claude.outputs.structured_output || '{}').new_plan_version == 1))
         run: "$TOOLS/.github/scripts/agent/verify-repro.sh"
 

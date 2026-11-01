@@ -11,6 +11,7 @@
       "enum": [
         "plan-ready",
         "needs-info",
+        "analysed",
         "no-change"
       ]
     },
