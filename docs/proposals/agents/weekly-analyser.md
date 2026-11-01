@@ -4,7 +4,7 @@ _Owners_: @TharmiganK
 _Reviewers_: @TharmiganK  
 _Created_: 2026/11/01  
 _Updated_: 2026/11/01  
-_Status_: Draft (security delivery pending decision)
+_Status_: Implemented for PoC
 
 ## Summary
 
@@ -98,8 +98,8 @@ Tie-breakers: a suspected bug that does not reproduce is dropped, not filed as a
 | `plan` | `contents: read`, `issues: read` | Reads the state branch, selects the unit, gathers existing issues for dedup. |
 | `agent` | `contents: read`, `issues: read` | Builds, runs Claude on the unit with a read-only token, then re-runs every reproduction. Uploads public findings as an artifact, and security findings only through the private path. |
 | `publish-issues` | `contents: read`, `issues: write` | Validates, verifies, dedups and caps public findings, files issues. Skipped on `dry_run`. |
-| `publish-security` | `contents: read` plus the private channel's credential | Delivers security findings privately. Skipped on `dry_run`. |
-| `update-state` | `contents: write` | Commits the state and the run report to `agent-state`. Runs after the publish jobs, even when they file nothing. |
+| `publish-security` | `contents: read`, `issues: write` (issue channel) plus `SECURITY_ADVISORY_TOKEN` (advisory channel) | Delivers security findings privately; in a dry run it only counts them. Runs only in private repositories until encrypted transfer exists. |
+| `update-state` | `contents: write` | Commits the state and the run report to `agent-state` and writes the report to the step summary. Runs after the publish jobs whenever `plan` succeeded, including dry runs and failed agent runs; the unit is only marked as analysed after a successful non-dry run. |
 
 ### Context
 
@@ -177,8 +177,8 @@ Allowed tools are the same as the QA agent's: read and edit tools, `run-tests.sh
 
 ### Verification, dedup and caps
 
-- **Verification.** `qa-verify.py` is generalised to any finding list (bug and question findings here) and re-runs all reproduction groups, one `bal test` per package. Bugs and questions that do not reproduce are dropped and listed in the run report with the reason.
-- **Dedup.** Each filed issue carries a hidden fingerprint `<!-- analyser:fp=<unit>/<key> -->`. Before filing, the publish job searches all issues, open and closed, for that fingerprint (`gh search issues` in this repository) and skips matches; this catches findings the agent re-discovers under the same key. The agent's own semantic check against `known-issues.json` catches findings reported by people.
+- **Verification.** `verify-findings.py`, shared with the QA agent, handles bug and question findings here and re-runs all reproduction groups, one `bal test` per package. Bugs and questions that do not reproduce are dropped and listed in the run report with the reason.
+- **Dedup.** Each filed issue carries a hidden fingerprint `<!-- analyser:fp=<unit>/<key> -->`. Before filing, the publish job reads the bodies of all `agent/generated` issues, open and closed, and skips findings whose fingerprint is already there; this catches findings the agent re-discovers under the same key. The agent's own semantic check against `known-issues.json` catches findings reported by people.
 - **Caps.** At most 4 public issues per run, in the agent's priority order, with verified bugs first; the rest are listed in the run report so they are not lost. At most 3 security findings per run.
 
 ### Issue format
@@ -222,7 +222,12 @@ Delivery options (decision needed before implementation):
 | **C. Restricted-label issue** | File a normal issue labelled `security/private` in this private repository. | No: issues in a public repository are public. | None. | Simplest for the PoC, but must be replaced before going upstream. |
 | **D. Encrypted artifact** | Encrypt the findings with a maintainer's public key (`age`) and upload them as an artifact; post nothing. | Yes. | One public key in the repository or a variable. | No notification by itself; someone must download and decrypt. Useful as a fallback alongside A or B. |
 
-Recommendation: **A** for both the PoC and upstream, with **D** as a fallback if advisory creation fails; **C** only if a PAT is not acceptable for the PoC.
+Decision: **A** for upstream. Draft advisories are not available in private repositories (the advisories API returns 404 for this private mirror while it works for the public upstream repository), so the channel is switchable through the repository variable `SECURITY_CHANNEL`:
+
+- `advisory`: draft repository security advisory per finding, created with the `SECURITY_ADVISORY_TOKEN` secret (a fine-grained PAT or App token with "Repository security advisories: write"), used only by `publish-security`; dedup by a fingerprint in the advisory description.
+- `issue`: an issue labelled `security/private`, used in this private PoC repository; `analyser-security.py` refuses this channel if the repository is public.
+
+Transfer between jobs: the agent job splits the structured output into the public `analyser-output` artifact (without `security`) and an `analyser-security` artifact (3-day retention) that is only uploaded when the repository is private. In a public repository the agent job fails if there are security findings, because an encrypted transfer (option D, for example with `age`) is not implemented yet; this is a prerequisite for running upstream. Neither the logs, the step summary nor the run report contain security content beyond counts.
 
 ## Limits and estimates
 

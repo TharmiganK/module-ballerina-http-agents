@@ -1,0 +1,52 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["coverage", "findings", "security"],
+  "properties": {
+    "coverage": {"type": "string", "minLength": 1, "maxLength": 20000},
+    "findings": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "category", "title", "body", "rule"],
+        "properties": {
+          "key": {"type": "string", "minLength": 3, "maxLength": 60},
+          "category": {"type": "string", "enum": ["bug", "spec", "question"]},
+          "title": {"type": "string", "minLength": 1, "maxLength": 120},
+          "body": {"type": "string", "minLength": 1, "maxLength": 30000},
+          "rule": {"type": "string", "minLength": 1, "maxLength": 500},
+          "related_issues": {"type": "array", "items": {"type": "integer"}},
+          "repro": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["test_package", "group", "test_code"],
+            "properties": {
+              "test_package": {"type": "string", "maxLength": 100},
+              "test_filter": {"type": "string", "maxLength": 200},
+              "group": {"type": "string", "maxLength": 40},
+              "test_code": {"type": "string", "minLength": 1, "maxLength": 10000}
+            }
+          }
+        }
+      }
+    },
+    "security": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "title", "severity", "body"],
+        "properties": {
+          "key": {"type": "string", "minLength": 3, "maxLength": 60},
+          "title": {"type": "string", "minLength": 1, "maxLength": 120},
+          "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
+          "cwe_ids": {"type": "array", "items": {"type": "string"}},
+          "body": {"type": "string", "minLength": 1, "maxLength": 30000}
+        }
+      }
+    }
+  }
+}

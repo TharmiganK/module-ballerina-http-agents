@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Re-runs the reproduction tests of the QA agent's `bug` and `spec` deviation findings and records, per finding key, whether one of
-its own test functions failed. Groups in the same Ballerina test package run in a single `bal test` invocation.
+"""Re-runs the reproduction tests of an agent's findings and records, per finding key, whether one of its own test
+functions failed. Used by the QA agent (bugs and spec deviations) and the weekly analyser (bugs and questions).
+Groups in the same Ballerina test package run in a single `bal test` invocation.
 
-Env: PR. Reads agent-output/result.json; writes agent-output/repro.json and agent-output/repro-<pkg>.log.
+Env: GROUP_PREFIX (for example qa_12_ or analyser_7_). Reads agent-output/result.json; writes
+agent-output/repro.json and agent-output/repro-<pkg>.log.
 """
 import collections
 import json
@@ -13,7 +15,7 @@ import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-PR = os.environ["PR"]
+GROUP_PREFIX = os.environ["GROUP_PREFIX"]
 OUT = Path("agent-output")
 RUNNER = ".github/scripts/run-tests.sh"
 JAVA_RESULTS = {"native": "native/build/test-results/test",
@@ -76,14 +78,19 @@ def outcome(functions, statuses, command):
     return {"status": "not-reproduced", "reason": f"All {len(found)} test(s) passed", "command": command}
 
 
+def needs_repro(finding):
+    return (finding.get("kind") == "bug"
+            or (finding.get("kind") == "spec" and finding.get("spec_case") == "deviation")
+            or finding.get("category") in ("bug", "question"))
+
+
 def main():
     result = json.loads((OUT / "result.json").read_text())
     results = {}
     by_package = collections.defaultdict(list)
 
     for finding in result.get("findings", []):
-        if not (finding.get("kind") == "bug"
-                or (finding.get("kind") == "spec" and finding.get("spec_case") == "deviation")):
+        if not needs_repro(finding):
             continue
         key, repro = finding["key"], finding.get("repro")
         if not repro:
@@ -91,7 +98,7 @@ def main():
             continue
         package, group = repro["test_package"], repro["group"]
         functions = re.findall(r"function\s+([A-Za-z_]\w*)\s*\(", repro["test_code"])
-        if not re.fullmatch(rf"qa_{PR}_\d+", group):
+        if not re.fullmatch(rf"{re.escape(GROUP_PREFIX)}\d+", group):
             results[key] = {"status": "not-run", "reason": f"Invalid group {group}"}
         elif not functions:
             results[key] = {"status": "not-run", "reason": "No test function in test_code"}

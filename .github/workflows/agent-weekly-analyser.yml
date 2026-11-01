@@ -1,0 +1,294 @@
+name: Agent - Weekly analyser
+
+# Design: docs/proposals/agents/weekly-analyser.md
+on:
+  schedule:
+    - cron: "0 1 * * 1"
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: Scope unit id from .github/agent-prompts/analyser/scopes.json (empty = automatic selection)
+        required: false
+        default: ""
+      dry_run:
+        description: Produce the report without filing issues, delivering security findings or advancing coverage
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: weekly-analyser
+  cancel-in-progress: false
+
+env:
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      unit: ${{ steps.plan.outputs.unit }}
+      reason: ${{ steps.plan.outputs.reason }}
+      sha: ${{ steps.info.outputs.sha }}
+      dry_run: ${{ steps.info.outputs.dry_run }}
+      private: ${{ steps.info.outputs.private }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - name: Fetch state branch
+        run: git fetch --no-tags origin agent-state:refs/remotes/origin/agent-state || echo "No state branch yet"
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SCOPE_INPUT: ${{ inputs.scope }}
+        run: python3 .github/scripts/agent/analyser-plan.py
+      - id: info
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DRY_RUN_INPUT: ${{ inputs.dry_run }}
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "dry_run=$([[ "$DRY_RUN_INPUT" == true ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "private=$(gh api "repos/$REPO" --jq .private)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: analyser-context
+          path: agent-context/
+          retention-days: 14
+
+  agent:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      issues: read
+    env:
+      packageUser: ${{ secrets.PACKAGE_USER }}
+      packagePAT: ${{ secrets.PACKAGE_PAT }}
+      REPO: ${{ github.repository }}
+      UNIT: ${{ needs.plan.outputs.unit }}
+      GROUP_PREFIX: analyser_${{ github.run_number }}_
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          fetch-depth: 50
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-build
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: analyser-context
+          path: agent-context
+
+      - name: Prepare prompt
+        id: prep
+        env:
+          SHA: ${{ needs.plan.outputs.sha }}
+          DRY_RUN: ${{ needs.plan.outputs.dry_run }}
+        run: |
+          set -euo pipefail
+          mkdir -p agent-output agent-security
+          jq -n --arg unit "$UNIT" --arg sha "$SHA" --arg run "$GITHUB_RUN_NUMBER" --arg dry "$DRY_RUN" \
+            '{unit: $unit, sha: $sha, run_number: $run, dry_run: ($dry == "true")}' > agent-output/meta.json
+          cp agent-output/meta.json agent-security/meta.json
+          echo "schema=$(jq -c . .github/agent-prompts/analyser/schema.json)" >> "$GITHUB_OUTPUT"
+          delim="EOF_$(openssl rand -hex 8)"
+          {
+            echo "prompt<<$delim"
+            cat .github/agent-prompts/analyser/prompt.md
+            echo
+            echo "## Run context"
+            echo
+            echo "- Repository: $REPO"
+            echo "- Scope unit: $UNIT (details in agent-context/scope.json)"
+            echo "- Checked-out commit (for permalinks): $SHA"
+            echo "- Reproduction group prefix: $GROUP_PREFIX (use ${GROUP_PREFIX}1, ${GROUP_PREFIX}2, ...)"
+            echo "- Workflow run: $RUN_URL"
+            echo "$delim"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run Claude
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          prompt: ${{ steps.prep.outputs.prompt }}
+          claude_args: |
+            --model claude-opus-5-5
+            --max-turns 150
+            --allowedTools "Read,Glob,Grep,Edit,Write,Bash(.github/scripts/run-tests.sh:*),Bash(target/ballerina-runtime/bin/bal:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh api:*)"
+            --disallowedTools "Bash(git push:*),Bash(git commit:*),Bash(gh issue create:*),Bash(gh issue comment:*),Bash(gh issue edit:*),WebFetch,WebSearch"
+            --json-schema '${{ steps.prep.outputs.schema }}'
+
+      # Security findings are split off here and never printed or uploaded with the public artifact.
+      - name: Collect agent output
+        if: always() && steps.claude.outcome != 'skipped'
+        env:
+          STRUCTURED_OUTPUT: ${{ steps.claude.outputs.structured_output }}
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: |
+          set -uo pipefail
+          printf '%s' "$STRUCTURED_OUTPUT" > agent-security/raw.json
+          if jq -e 'type == "object"' agent-security/raw.json > /dev/null 2>&1; then
+            jq 'del(.security)' agent-security/raw.json > agent-output/result.json
+            jq '.security // []' agent-security/raw.json > agent-security/security.json
+          else
+            : > agent-output/result.json
+            echo '[]' > agent-security/security.json
+          fi
+          rm agent-security/raw.json
+          echo "Security findings: $(jq length agent-security/security.json)"
+          if [[ -n "$EXECUTION_FILE" && -f "$EXECUTION_FILE" ]]; then
+            jq '[.[] | select(.type == "result")] | last | {num_turns, duration_ms, total_cost_usd, usage}' \
+              "$EXECUTION_FILE" > agent-output/usage.json || true
+          fi
+
+      - name: Verify reproductions
+        if: steps.claude.outcome == 'success'
+        run: python3 .github/scripts/agent/verify-findings.py
+
+      - uses: actions/upload-artifact@v7
+        if: always() && steps.claude.outcome != 'skipped'
+        with:
+          name: analyser-output
+          path: agent-output/
+          retention-days: 14
+          overwrite: true
+
+      # Artifacts of public repositories are public; until an encrypted transfer exists, security findings may only
+      # leave this job in a private repository.
+      - name: Guard security transfer
+        if: steps.claude.outcome == 'success' && needs.plan.outputs.private != 'true'
+        run: |
+          if [[ "$(jq length agent-security/security.json)" != 0 ]]; then
+            echo "::error::Security findings cannot be transferred privately from a public repository (not implemented)"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v7
+        if: steps.claude.outcome == 'success' && needs.plan.outputs.private == 'true'
+        with:
+          name: analyser-security
+          path: agent-security/
+          retention-days: 3
+          overwrite: true
+
+  publish-issues:
+    needs: [plan, agent]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      DRY_RUN: ${{ needs.plan.outputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: analyser-output
+          path: agent-output
+      - run: python3 .github/scripts/agent/analyser-publish.py
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: analyser-publish
+          path: |
+            agent-output/publish-report.json
+            agent-output/dry-run-*.md
+          retention-days: 14
+          if-no-files-found: ignore
+          overwrite: true
+
+  publish-security:
+    needs: [plan, agent]
+    if: needs.plan.outputs.private == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    outputs:
+      found: ${{ steps.deliver.outputs.found }}
+      delivered: ${{ steps.deliver.outputs.delivered }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      DRY_RUN: ${{ needs.plan.outputs.dry_run }}
+      SECURITY_CHANNEL: ${{ vars.SECURITY_CHANNEL }}
+      SECURITY_ADVISORY_TOKEN: ${{ secrets.SECURITY_ADVISORY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: analyser-security
+          path: agent-security
+      - id: deliver
+        run: python3 .github/scripts/agent/analyser-security.py
+
+  update-state:
+    needs: [plan, agent, publish-issues, publish-security]
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      # Not sparse: the state worktree would inherit a sparse checkout and miss state.json.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: analyser-output
+          path: agent-output
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: analyser-publish
+          path: agent-output
+      - name: Update state and report
+        env:
+          UNIT: ${{ needs.plan.outputs.unit }}
+          SHA: ${{ needs.plan.outputs.sha }}
+          SELECTION_REASON: ${{ needs.plan.outputs.reason }}
+          RUN_NUMBER: ${{ github.run_number }}
+          AGENT_RESULT: ${{ needs.agent.result }}
+          DRY_RUN: ${{ needs.plan.outputs.dry_run }}
+          SEC_FOUND: ${{ needs.publish-security.outputs.found }}
+          SEC_DELIVERED: ${{ needs.publish-security.outputs.delivered }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch --no-tags --depth=1 origin agent-state:refs/remotes/origin/agent-state 2>/dev/null; then
+            git worktree add -B agent-state state origin/agent-state
+          else
+            git worktree add --orphan -b agent-state state
+          fi
+          python3 .github/scripts/agent/analyser-state.py state
+          git -C state add -A
+          git -C state commit -q -m "Weekly analyser: $UNIT (run $RUN_NUMBER)"
+          git -C state push -q origin agent-state

@@ -1,0 +1,326 @@
+{
+  "units": [
+    {
+      "id": "listener",
+      "description": "Listener configuration, lifecycle, default listener, request limits",
+      "spec_sections": [
+        "2.1"
+      ],
+      "paths": [
+        "ballerina/http_service_endpoint.bal",
+        "ballerina/http_default_listener.bal",
+        "native/src/main/java/io/ballerina/stdlib/http/api/service/endpoint/",
+        "native/src/main/java/io/ballerina/stdlib/http/transport/contractimpl/listener/"
+      ],
+      "test_packages": [
+        "http-service-tests"
+      ]
+    },
+    {
+      "id": "service-dispatching",
+      "description": "Service declarations, base paths, resource names, routing",
+      "spec_sections": [
+        "2.2",
+        "2.3.1",
+        "2.3.2",
+        "2.3.3",
+        "3",
+        "4.1",
+        "4.2"
+      ],
+      "paths": [
+        "ballerina/http_annotation.bal",
+        "native/src/main/java/io/ballerina/stdlib/http/api/HttpDispatcher.java",
+        "native/src/main/java/io/ballerina/stdlib/http/api/ResourceDispatcher.java",
+        "native/src/main/java/io/ballerina/stdlib/http/api/HTTPServicesRegistry.java",
+        "native/src/main/java/io/ballerina/stdlib/http/api/HttpService.java",
+        "native/src/main/java/io/ballerina/stdlib/http/uri/"
+      ],
+      "test_packages": [
+        "http-dispatching-tests"
+      ]
+    },
+    {
+      "id": "service-parameter-binding",
+      "description": "Resource signature parameters and payload binding",
+      "spec_sections": [
+        "2.3.4",
+        "4.3",
+        "4.4",
+        "4.5",
+        "5"
+      ],
+      "paths": [
+        "ballerina/http_types.bal",
+        "native/src/main/java/io/ballerina/stdlib/http/api/service/signature/"
+      ],
+      "test_packages": [
+        "http-dispatching-tests"
+      ]
+    },
+    {
+      "id": "service-response",
+      "description": "Resource return types, status code responses, caller respond",
+      "spec_sections": [
+        "2.3.5",
+        "6"
+      ],
+      "paths": [
+        "ballerina/http_connection.bal",
+        "ballerina/http_response.bal",
+        "ballerina/http_status_code_types.bal",
+        "ballerina/http_status_codes.bal",
+        "native/src/main/java/io/ballerina/stdlib/http/api/nativeimpl/connection/",
+        "native/src/main/java/io/ballerina/stdlib/http/api/HttpCallableUnitCallback.java"
+      ],
+      "test_packages": [
+        "http-misc-tests",
+        "http-service-tests"
+      ]
+    },
+    {
+      "id": "client-core",
+      "description": "Client construction, configuration and actions",
+      "spec_sections": [
+        "2.4.1",
+        "2.4.2",
+        "2.4.1.11",
+        "2.4.1.12"
+      ],
+      "paths": [
+        "ballerina/http_client_endpoint.bal",
+        "ballerina/http_client.bal",
+        "ballerina/http_client_config.bal",
+        "ballerina/http_client_connection_pool.bal",
+        "native/src/main/java/io/ballerina/stdlib/http/api/client/actions/",
+        "native/src/main/java/io/ballerina/stdlib/http/api/client/endpoint/",
+        "native/src/main/java/io/ballerina/stdlib/http/transport/contractimpl/sender/"
+      ],
+      "test_packages": [
+        "http-client-tests"
+      ]
+    },
+    {
+      "id": "client-data-binding",
+      "description": "Client response data binding and status code binding",
+      "spec_sections": [
+        "2.4.3",
+        "2.4.1.9",
+        "2.4.1.10"
+      ],
+      "paths": [
+        "ballerina/http_client_payload_builder.bal",
+        "ballerina/http_status_code_client.bal",
+        "ballerina/http_status_code_client_object.bal"
+      ],
+      "test_packages": [
+        "http-client-tests"
+      ]
+    },
+    {
+      "id": "client-resiliency",
+      "description": "Redirect, retry, circuit breaker, load balance, failover",
+      "spec_sections": [
+        "2.4.1.3",
+        "2.4.1.4",
+        "2.4.1.5",
+        "2.4.1.7",
+        "2.4.1.8"
+      ],
+      "paths": [
+        "ballerina/resiliency_failover_client.bal",
+        "ballerina/resiliency_http_circuit_breaker.bal",
+        "ballerina/resiliency_http_load_balancer_rule.bal",
+        "ballerina/resiliency_http_retry_client.bal",
+        "ballerina/resiliency_http_round_robin_rule.bal",
+        "ballerina/resiliency_load_balance_client.bal",
+        "ballerina/redirect_http_client.bal"
+      ],
+      "test_packages": [
+        "http-resiliency-tests",
+        "http-misc-tests"
+      ]
+    },
+    {
+      "id": "caching-cookies",
+      "description": "HTTP caching and cookies",
+      "spec_sections": [
+        "2.4.1.2",
+        "2.4.1.6",
+        "4.6"
+      ],
+      "paths": [
+        "ballerina/caching_cache_control_utils.bal",
+        "ballerina/caching_cached_response_validation.bal",
+        "ballerina/caching_constants.bal",
+        "ballerina/caching_freshness_lifetime_calculation.bal",
+        "ballerina/caching_http_cache.bal",
+        "ballerina/caching_http_caching_client.bal",
+        "ballerina/caching_request_cache_control.bal",
+        "ballerina/caching_response_age_calculation.bal",
+        "ballerina/caching_response_cache_control.bal",
+        "ballerina/caching_stale_response_checks.bal",
+        "ballerina/caching_type_defs.bal",
+        "ballerina/caching_utils.bal",
+        "ballerina/cookie.bal",
+        "ballerina/cookie_cookieStore.bal",
+        "ballerina/cookie_csv_persistent_cookie_handler.bal",
+        "ballerina/cookie_http_client.bal",
+        "ballerina/cookie_persistent_cookie_handler.bal",
+        "ballerina/cookie_utils.bal",
+        "native/src/main/java/io/ballerina/stdlib/http/api/client/caching/"
+      ],
+      "test_packages": [
+        "http-advanced-tests"
+      ]
+    },
+    {
+      "id": "headers-payload",
+      "description": "Headers, request and response payload handling, links",
+      "spec_sections": [
+        "7"
+      ],
+      "paths": [
+        "ballerina/http_headers.bal",
+        "ballerina/http_request.bal",
+        "ballerina/http_commons.bal",
+        "native/src/main/java/io/ballerina/stdlib/http/api/nativeimpl/ExternHeaders.java",
+        "native/src/main/java/io/ballerina/stdlib/http/api/nativeimpl/ExternRequest.java",
+        "native/src/main/java/io/ballerina/stdlib/http/api/nativeimpl/ExternResponse.java",
+        "native/src/main/java/io/ballerina/stdlib/http/api/nativeimpl/ParseHeader.java"
+      ],
+      "test_packages": [
+        "http-misc-tests"
+      ]
+    },
+    {
+      "id": "interceptors-errors",
+      "description": "Interceptors, request context, error types and error responses",
+      "spec_sections": [
+        "8.1",
+        "8.2.1",
+        "8.2.2",
+        "8.2.5"
+      ],
+      "paths": [
+        "ballerina/http_interceptors.bal",
+        "ballerina/http_errors.bal",
+        "ballerina/http_status_error_utils.bal",
+        "ballerina/http_request_context.bal",
+        "native/src/main/java/io/ballerina/stdlib/http/api/HTTPInterceptorServicesRegistry.java",
+        "native/src/main/java/io/ballerina/stdlib/http/api/HttpRequestInterceptorUnitCallback.java",
+        "native/src/main/java/io/ballerina/stdlib/http/api/HttpResponseInterceptorUnitCallback.java",
+        "native/src/main/java/io/ballerina/stdlib/http/api/InterceptorResource.java",
+        "native/src/main/java/io/ballerina/stdlib/http/api/InterceptorService.java",
+        "native/src/main/java/io/ballerina/stdlib/http/api/HttpErrorType.java"
+      ],
+      "test_packages": [
+        "http-interceptor-tests"
+      ]
+    },
+    {
+      "id": "auth",
+      "description": "Listener and client authentication and authorization",
+      "spec_sections": [
+        "9.1",
+        "2.4.1.1"
+      ],
+      "paths": [
+        "ballerina/auth_client_basic_auth_handler.bal",
+        "ballerina/auth_client_bearer_token_auth_handler.bal",
+        "ballerina/auth_client_oauth2_handler.bal",
+        "ballerina/auth_client_self_signed_jwt_auth_handler.bal",
+        "ballerina/auth_desugar.bal",
+        "ballerina/auth_listener_file_user_store_basic_auth_handler.bal",
+        "ballerina/auth_listener_jwt_auth_handler.bal",
+        "ballerina/auth_listener_ldap_user_store_basic_auth_handler.bal",
+        "ballerina/auth_listener_oauth2_handler.bal",
+        "ballerina/auth_types.bal",
+        "ballerina/auth_utils.bal"
+      ],
+      "test_packages": [
+        "http-security-tests"
+      ]
+    },
+    {
+      "id": "ssl",
+      "description": "SSL/TLS and mutual SSL for listener and client",
+      "spec_sections": [
+        "9.2"
+      ],
+      "paths": [
+        "native/src/main/java/io/ballerina/stdlib/http/transport/contractimpl/common/ssl/",
+        "native/src/main/java/io/ballerina/stdlib/http/transport/contractimpl/common/certificatevalidation/",
+        "native/src/main/java/io/ballerina/stdlib/http/transport/contractimpl/listener/SslHandshakeCompletionHandlerForServer.java",
+        "native/src/main/java/io/ballerina/stdlib/http/transport/contractimpl/sender/SslHandshakeCompletionHandlerForClient.java"
+      ],
+      "test_packages": [
+        "http-security-tests"
+      ]
+    },
+    {
+      "id": "http2",
+      "description": "HTTP/2 listener and client transport, push promises",
+      "spec_sections": [
+        "10.1",
+        "2.1.4"
+      ],
+      "paths": [
+        "ballerina/http2_push_promise.bal",
+        "ballerina/http2_future.bal",
+        "native/src/main/java/io/ballerina/stdlib/http/transport/contractimpl/listener/http2/",
+        "native/src/main/java/io/ballerina/stdlib/http/transport/contractimpl/sender/http2/",
+        "native/src/main/java/io/ballerina/stdlib/http/transport/contractimpl/common/http2/",
+        "native/src/main/java/io/ballerina/stdlib/http/transport/contractimpl/listener/states/http2/",
+        "native/src/main/java/io/ballerina/stdlib/http/transport/contractimpl/sender/states/http2/"
+      ],
+      "test_packages": [
+        "http2-tests"
+      ]
+    },
+    {
+      "id": "sse-streaming",
+      "description": "Server-sent events and payload streaming, back-pressure",
+      "spec_sections": [
+        "2.3.5.3",
+        "6.1"
+      ],
+      "paths": [
+        "ballerina/bytes_to_sse_stream_generator.bal",
+        "ballerina/sse_to_bytes_stream_generator.bal",
+        "ballerina/http_back_pressure.bal"
+      ],
+      "test_packages": [
+        "http-advanced-tests"
+      ]
+    },
+    {
+      "id": "compiler-plugin",
+      "description": "Compile-time validation, code modification and static code rules",
+      "spec_sections": [
+        "11"
+      ],
+      "paths": [
+        "compiler-plugin/src/main/java/"
+      ],
+      "test_packages": [
+        "compiler-plugin"
+      ]
+    },
+    {
+      "id": "logging",
+      "description": "Trace and access logs",
+      "spec_sections": [
+        "8.2.3",
+        "8.2.4"
+      ],
+      "paths": [
+        "ballerina/http_log_manager.bal",
+        "native/src/main/java/io/ballerina/stdlib/http/api/logging/"
+      ],
+      "test_packages": [
+        "http-misc-tests"
+      ]
+    }
+  ]
+}

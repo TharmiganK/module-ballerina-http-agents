@@ -179,7 +179,9 @@ jobs:
 
       - name: Verify reproductions
         if: steps.claude.outcome == 'success'
-        run: python3 .github/scripts/agent/qa-verify.py
+        env:
+          GROUP_PREFIX: qa_${{ needs.gate.outputs.pr }}_
+        run: python3 .github/scripts/agent/verify-findings.py
 
       - uses: actions/upload-artifact@v7
         if: always() && steps.claude.outcome != 'skipped'

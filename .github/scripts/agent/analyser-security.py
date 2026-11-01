@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""Delivers the weekly analyser's security findings privately. Never prints finding content.
+
+Channels (SECURITY_CHANNEL):
+- advisory: a draft repository security advisory per finding (public repositories only; needs
+  SECURITY_ADVISORY_TOKEN with repository security advisories write access).
+- issue: an issue labelled security/private, refused unless the repository is private.
+
+Env: REPO, RUN_URL, GH_TOKEN, SECURITY_CHANNEL, SECURITY_ADVISORY_TOKEN, DRY_RUN.
+Reads agent-security/security.json and agent-security/meta.json; writes the delivered count to the step output.
+"""
+import json
+import os
+import re
+import subprocess
+from pathlib import Path
+
+REPO, RUN_URL = os.environ["REPO"], os.environ["RUN_URL"]
+CHANNEL = os.environ.get("SECURITY_CHANNEL", "")
+DRY_RUN = os.environ.get("DRY_RUN", "false") == "true"
+IN = Path("agent-security")
+FP_MARKER = re.compile(r"<!--\s*analyser:sec=([a-z0-9-]+/[a-z0-9-]+)\s*-->")
+
+
+def gh(args, token=None, payload=None):
+    env = dict(os.environ, GH_TOKEN=token) if token else os.environ
+    proc = subprocess.run(["gh", *args], input=json.dumps(payload) if payload is not None else None,
+                          capture_output=True, text=True, env=env)
+    if proc.returncode != 0:
+        # Error output can echo the request body; report only the status line.
+        raise SystemExit(f"::error::gh {args[0]} {args[1] if len(args) > 1 else ''} failed "
+                         f"({proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else 'no output'})")
+    return proc.stdout
+
+
+def slug(key):
+    return re.sub(r"[^a-z0-9-]+", "-", key.lower()).strip("-")[:60] or "finding"
+
+
+def body_for(finding, meta, fingerprint):
+    return "\n".join([
+        re.sub(r"<!--\s*analyser:[^>]*-->", "", finding["body"]).strip(), "",
+        "---",
+        f"Found by the weekly analyser in scope `{meta['unit']}` at `{meta['sha'][:12]}` ([workflow run]({RUN_URL})). "
+        "This finding has not been reviewed by a human yet.", "",
+        f"<!-- analyser:sec={fingerprint} -->",
+    ])
+
+
+def main():
+    findings = json.loads((IN / "security.json").read_text()) if (IN / "security.json").exists() else []
+    meta = json.loads((IN / "meta.json").read_text())
+    delivered = 0
+    if findings and not DRY_RUN:
+        if CHANNEL == "issue":
+            if json.loads(gh(["api", f"repos/{REPO}"]))["private"] is not True:
+                raise SystemExit("::error::SECURITY_CHANNEL=issue is only allowed in private repositories")
+            listed = gh(["issue", "list", "--repo", REPO, "--state", "all", "--label", "security/private",
+                         "--limit", "1000", "--json", "body"])
+            known = {fp for i in json.loads(listed) for fp in FP_MARKER.findall(i["body"] or "")}
+        elif CHANNEL == "advisory":
+            token = os.environ.get("SECURITY_ADVISORY_TOKEN")
+            if not token:
+                raise SystemExit("::error::SECURITY_CHANNEL=advisory needs the SECURITY_ADVISORY_TOKEN secret")
+            listed = gh(["api", "--paginate", f"repos/{REPO}/security-advisories", "--jq", ".[].description"],
+                        token=token)
+            known = set(FP_MARKER.findall(listed))
+        else:
+            raise SystemExit(f"::error::Unknown SECURITY_CHANNEL '{CHANNEL}' (expected issue or advisory)")
+
+        for finding in findings:
+            fingerprint = f"{meta['unit']}/{slug(finding.get('key', ''))}"
+            if fingerprint in known:
+                continue
+            body = body_for(finding, meta, fingerprint)
+            if CHANNEL == "issue":
+                gh(["issue", "create", "--repo", REPO, "--title", f"[Security] {finding['title']}", "--body", body,
+                    "--label", "security/private", "--label", "agent/generated", "--label", "module/http"])
+            else:
+                gh(["api", "-X", "POST", f"repos/{REPO}/security-advisories", "--input", "-"],
+                   token=os.environ["SECURITY_ADVISORY_TOKEN"],
+                   payload={"summary": finding["title"], "description": body, "severity": finding["severity"],
+                            "cwe_ids": finding.get("cwe_ids") or None,
+                            "vulnerabilities": [{"package": {"ecosystem": "other", "name": "ballerina/http"}}]})
+            known.add(fingerprint)
+            delivered += 1
+
+    with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+        out.write(f"found={len(findings)}\ndelivered={delivered}\n")
+    print(f"Security findings: {len(findings)} found, {delivered} delivered via '{CHANNEL or 'none'}'"
+          + (" (dry run)" if DRY_RUN else ""))
+
+
+if __name__ == "__main__":
+    main()
