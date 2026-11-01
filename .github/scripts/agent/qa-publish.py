@@ -170,7 +170,7 @@ def main():
                    "inline. Comment `/qa` to review the latest commit.", ""]
     if not any(counts.values()):
         header += ["No behavioural issues, spec issues or missing tests found.", ""]
-    body = "\n".join(header) + clean(result["summary"])
+    body = "\n".join(header) + "\n" + clean(result["summary"])
     if other:
         body += "\n\n### Other findings\n"
         for location, text in other:
