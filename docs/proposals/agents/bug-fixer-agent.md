@@ -111,6 +111,7 @@ An issue carries a single `agent/*` label at a time, showing its state. The two 
 | `agent/pr-open` | Publish job | Fix PR opened. |
 | `agent/failed` | Publish job (`if: failure()`) | An investigation or implementation failed; a comment links the run. A failed discuss or review only comments and keeps the current state. |
 | `agent/generated` | Publish job | Marks issues and PRs created by any agent. |
+| `agent/auto-fix` | Maintainer, on an agent PR | Address review feedback automatically after reviewers go quiet (see below). Not a state label. |
 
 ```mermaid
 stateDiagram-v2
@@ -252,6 +253,20 @@ The agent checks out the PR branch, reads the review and its comments from the c
 ```
 
 The publish job validates that every `comment_id` belongs to the triggering review, posts the replies in their threads, posts at most one summary comment, applies the patch with the same path and size rules as implement, pushes to the PR branch and dispatches CI again.
+
+#### Review threads, QA findings and thread resolution
+
+The review context lists every unresolved review thread with its source (`maintainer`, `qa` for threads started by the QA agent, `other` for anyone else, including third-party bots such as CodeRabbit) and whether it is actionable (unresolved, from a maintainer or the QA agent, and not last answered by the bug fixer). The agent addresses the triggering review together with all actionable QA threads, so a maintainer's `/bug-fixer` review closes the loop on the QA review as well. Replies are allowed in the triggering review and in open maintainer and QA threads; the publish job re-reads the threads and rejects replies anywhere else. Each reply carries `resolve`; the publish job resolves a thread (GraphQL `resolveReviewThread`) when the agent fully addressed it, and leaves it open when the agent asked a question or disagreed, so resolved means done.
+
+#### Automatic review handling (`agent/auto-fix`)
+
+Maintainers can opt a single agent PR into automatic review handling by adding `agent/auto-fix`. Review feedback in real PRs arrives in bursts (several comments, sometimes several reviews, over a few minutes), so the agent should act once per burst, not once per comment:
+
+- `agent-auto-fix.yml` runs on every review, review comment and PR comment on a labelled PR, when the label is added, and when dispatched by the QA agent (after reviewing a labelled PR) or by the bug fixer (after each round). Events created with `GITHUB_TOKEN` trigger nothing, so the bots' own comments never restart it.
+- The run sleeps for `AUTOFIX_QUIET_MINUTES` (repository variable, default 10). Its concurrency group cancels the run in progress, so each new comment restarts the wait: the bug fixer is dispatched only after reviewers have been quiet for the whole period.
+- After the wait it checks for actionable threads; chat-only comments open no threads and dispatch nothing. The bug fixer's gate checks again before starting, so a queued run that has nothing left to do does not build.
+- Each automatic round's summary carries a hidden `auto-round` marker. After `AUTOFIX_MAX_ROUNDS` (default 3) rounds, auto-fix pauses with a comment; `/bug-fixer` continues manually. This bounds cost and stops any loop between QA findings and fixes.
+- A human push to the PR branch during a round makes the publish step refuse to push, as for manual rounds.
 
 ### Tool allowlists
 

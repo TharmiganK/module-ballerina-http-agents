@@ -2,7 +2,7 @@
 # Writes the issue/PR thread the agent works from into agent-context/, tagging each entry as trusted
 # (author has write access) or untrusted. For the implement phase it also resolves the approved plan.
 #
-# Env: REPO, PHASE (investigate|discuss|implement|review|qa), NUMBER, and for review REVIEW_ID or COMMENT_ID.
+# Env: REPO, PHASE (investigate|discuss|implement|review|qa), NUMBER, and for review MODE=auto or REVIEW_ID or COMMENT_ID.
 set -euo pipefail
 
 : "${REPO:?}" "${PHASE:?}" "${NUMBER:?}"
@@ -62,7 +62,10 @@ case "$PHASE" in
     pr=$(gh api "repos/$REPO/pulls/$NUMBER")
     conversation=$(paginate "repos/$REPO/issues/$NUMBER/comments")
     all_review_comments=$(paginate "repos/$REPO/pulls/$NUMBER/comments")
-    if [[ -n "${REVIEW_ID:-}" ]]; then
+    threads=$(python3 .github/scripts/agent/pr-threads.py "$REPO" "$NUMBER")
+    if [[ "${MODE:-}" == auto ]]; then
+      trigger='{"kind": "auto", "body": "", "comments": []}'
+    elif [[ -n "${REVIEW_ID:-}" ]]; then
       review=$(gh api "repos/$REPO/pulls/$NUMBER/reviews/$REVIEW_ID")
       review_comments=$(paginate "repos/$REPO/pulls/$NUMBER/reviews/$REVIEW_ID/comments")
       trigger=$(jq -n --argjson r "$review" --argjson c "$review_comments" "$TRUSTED"'
@@ -75,10 +78,13 @@ case "$PHASE" in
         {kind: "comment", id: $c.id, author: $c.user.login, trusted: ($c | trusted), body: ($c.body // ""), comments: []}')
     fi
     jq -n --argjson pr "$pr" --argjson trigger "$trigger" --argjson conv "$conversation" \
-          --argjson rc "$all_review_comments" "$TRUSTED"'
+          --argjson rc "$all_review_comments" --argjson threads "$threads" "$TRUSTED"'
       {
         number: $pr.number, title: $pr.title, head: $pr.head.ref, body: ($pr.body // ""),
         trigger: $trigger,
+        open_threads: [$threads[] | select(.resolved | not)
+                       | {thread_id, source, actionable, outdated, path, line,
+                          comments: [.comments[] | {id, author, created_at, body}]}],
         conversation: [$conv[] | {id, author: .user.login, trusted: trusted, created_at, body}],
         all_review_comments: [$rc[] | {id, author: .user.login, trusted: trusted, path, line, in_reply_to_id, created_at, body}]
       }' > "$OUT/thread.json"

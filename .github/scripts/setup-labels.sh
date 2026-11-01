@@ -41,6 +41,7 @@ label "agent/implementing"  "$AGENT" "Agent: implementing the approved plan"
 label "agent/pr-open"       "$AGENT" "Agent: fix PR opened"
 label "agent/failed"        "$AGENT" "Agent: run failed, see the workflow logs"
 label "agent/generated"     "$AGENT" "Created by an AI agent"
+label "agent/auto-fix"      "$AGENT" "Bug fixer addresses review feedback on this agent PR automatically after reviewers go quiet"
 label "agent/qa-skip"       "$AGENT" "Do not run the QA agent automatically on this PR"
 label "agent/qa-trusted"    "$AGENT" "Maintainer reviewed build-logic changes in this fork PR; /qa may run it"
 

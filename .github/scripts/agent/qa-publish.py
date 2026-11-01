@@ -199,6 +199,10 @@ def main():
         gh_api(f"repos/{REPO}/pulls/{PR}/reviews", method="POST", payload=review)
     print(f"Posted review: {len(inline)} inline, {len(other)} in body, {duplicates} duplicates, counts {counts}")
 
+    # Reviews posted with GITHUB_TOKEN trigger no workflows, so start the auto-fix wait explicitly.
+    if inline and "agent/auto-fix" in [label["name"] for label in pr.get("labels", [])]:
+        subprocess.run(["gh", "workflow", "run", "agent-auto-fix.yml", "--repo", REPO, "-f", f"pr={PR}"], check=False)
+
 
 if __name__ == "__main__":
     main()

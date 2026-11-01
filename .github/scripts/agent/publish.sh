@@ -249,16 +249,22 @@ case "$MODE" in
     head_ref=$(jq -r '.head_ref' "$META")
     base=$(jq -r '.base_sha' "$META")
     review_id=$(jq -r '.review_id // empty' "$META")
+    mode=$(jq -r '.mode // empty' "$META")
     ISSUE="${head_ref#agent/issue-}"
     jq -e '.summary | length > 0' "$RESULT" > /dev/null || die "Missing summary"
 
-    allowed_ids=""
+    # Replies may target the triggering review's comments and open threads started by a maintainer or the QA agent;
+    # never third-party threads.
+    python3 .github/scripts/agent/pr-threads.py "$REPO" "$NUMBER" > threads.json
+    allowed_ids=$(jq -r '.[] | select(.resolved | not) | select(.source == "maintainer" or .source == "qa")
+                         | .comments[].id' threads.json)
     if [[ -n "$review_id" ]]; then
-      allowed_ids=$(gh api --paginate "repos/$REPO/pulls/$NUMBER/reviews/$review_id/comments" --jq '.[].id')
+      allowed_ids+=$'\n'$(gh api --paginate "repos/$REPO/pulls/$NUMBER/reviews/$review_id/comments" --jq '.[].id')
     fi
     while IFS= read -r id; do
       [[ -z "$id" ]] && continue
-      grep -qx "$id" <<< "$allowed_ids" || die "Reply targets comment $id, which is not part of the triggering review"
+      grep -qx "$id" <<< "$allowed_ids" \
+        || die "Reply targets comment $id, which is neither in the triggering review nor in an open maintainer or QA thread"
     done < <(jq -r '.replies[].comment_id' "$RESULT")
 
     if [[ "$(field .changed)" == true ]]; then
@@ -282,10 +288,23 @@ case "$MODE" in
       jq -r '.body' <<< "$reply" | strip_markers > reply.md
       footer >> reply.md
       gh api "repos/$REPO/pulls/$NUMBER/comments/$id/replies" -F body=@reply.md > /dev/null
+      if [[ "$(jq -r '.resolve' <<< "$reply")" == true ]]; then
+        thread=$(jq -r --argjson id "$id" '.[] | select(any(.comments[]; .id == $id)) | .thread_id' threads.json)
+        if [[ -n "$thread" ]]; then
+          gh api graphql -f query='mutation($t: ID!) { resolveReviewThread(input: {threadId: $t}) { thread { isResolved } } }' \
+            -f t="$thread" > /dev/null || echo "::warning::Could not resolve review thread for comment $id"
+        fi
+      fi
     done
     field .summary | strip_markers > comment.md
+    [[ "$mode" == auto ]] && printf '\n\n<!-- bug-fixer:auto-round -->' >> comment.md
     footer >> comment.md
     post_issue_comment "$NUMBER" comment.md
+
+    # With agent/auto-fix, look again after this round: feedback may have arrived while the agent was working.
+    if [[ "$(gh pr view "$NUMBER" --repo "$REPO" --json labels --jq '[.labels[].name] | index("agent/auto-fix")')" != null ]]; then
+      gh workflow run agent-auto-fix.yml --repo "$REPO" -f pr="$NUMBER" || echo "::warning::Could not schedule the auto-fix check"
+    fi
     ;;
 
   fail)

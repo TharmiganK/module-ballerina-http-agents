@@ -1,23 +1,52 @@
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["replies", "summary", "changed"],
+  "required": [
+    "replies",
+    "summary",
+    "changed"
+  ],
   "properties": {
     "replies": {
       "type": "array",
-      "maxItems": 10,
+      "maxItems": 20,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["comment_id", "body"],
+        "required": [
+          "comment_id",
+          "body",
+          "resolve"
+        ],
         "properties": {
-          "comment_id": {"type": "integer"},
-          "body": {"type": "string", "minLength": 1, "maxLength": 10000}
+          "comment_id": {
+            "type": "integer"
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "resolve": {
+            "type": "boolean"
+          }
         }
       }
     },
-    "summary": {"type": "string", "minLength": 1, "maxLength": 20000},
-    "changed": {"type": "boolean"},
-    "ci_tests": {"type": "array", "maxItems": 5, "items": {"type": "string"}}
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 20000
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "ci_tests": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "string"
+      }
+    }
   }
 }

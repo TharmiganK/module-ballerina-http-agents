@@ -1,0 +1,91 @@
+name: Agent - Auto-fix scheduler
+
+# For agent PRs labelled agent/auto-fix: waits until reviewers have been quiet for AUTOFIX_QUIET_MINUTES (default 10),
+# then asks the bug fixer to address every open maintainer and QA review thread in one run. Every new review, review
+# comment or PR comment cancels the waiting run and restarts the timer (concurrency with cancel-in-progress), so a
+# burst of comments results in one bug fixer run. At most AUTOFIX_MAX_ROUNDS (default 3) automatic rounds per PR.
+# Design: docs/proposals/agents/bug-fixer-agent.md
+on:
+  pull_request_review:
+    types: [submitted]
+  pull_request_review_comment:
+    types: [created]
+  issue_comment:
+    types: [created]
+  pull_request:
+    types: [labeled]
+  # Dispatched by the QA agent after it reviews an auto-fix PR and by the bug fixer after each round, since events
+  # created with GITHUB_TOKEN do not trigger workflows.
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Agent PR number
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: auto-fix-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}
+  cancel-in-progress: true
+
+jobs:
+  wait-and-dispatch:
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'pull_request' && github.event.label.name == 'agent/auto-fix')
+      || (github.event_name != 'pull_request' && github.event_name != 'issue_comment'
+        && contains(github.event.pull_request.labels.*.name, 'agent/auto-fix'))
+      || (github.event_name == 'issue_comment' && github.event.issue.pull_request
+        && contains(github.event.issue.labels.*.name, 'agent/auto-fix'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      pull-requests: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}
+      QUIET_MINUTES: ${{ vars.AUTOFIX_QUIET_MINUTES || '10' }}
+      MAX_ROUNDS: ${{ vars.AUTOFIX_MAX_ROUNDS || '3' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+
+      - name: Wait for reviewers to go quiet
+        run: |
+          [[ "$QUIET_MINUTES" =~ ^[0-9]+$ ]] || { echo "::error::AUTOFIX_QUIET_MINUTES must be a number"; exit 1; }
+          echo "Waiting ${QUIET_MINUTES} minutes; any new activity on #$PR restarts the wait."
+          sleep $((QUIET_MINUTES * 60))
+
+      - name: Dispatch the bug fixer if there is unaddressed feedback
+        run: |
+          set -euo pipefail
+          [[ "$PR" =~ ^[0-9]+$ ]] || { echo "::error::Invalid PR number"; exit 1; }
+          pr=$(gh pr view "$PR" --repo "$REPO" --json state,headRefName,labels,comments)
+          if [[ "$(jq -r .state <<< "$pr")" != OPEN || ! "$(jq -r .headRefName <<< "$pr")" =~ ^agent/issue-[0-9]+$ ]] \
+             || ! jq -e '[.labels[].name] | index("agent/auto-fix")' <<< "$pr" > /dev/null; then
+            echo "::notice::#$PR is not an open agent PR labelled agent/auto-fix"
+            exit 0
+          fi
+
+          rounds=$(jq '[.comments[].body | select(test("<!-- bug-fixer:auto-round -->"))] | length' <<< "$pr")
+          if (( rounds >= MAX_ROUNDS )); then
+            if ! jq -e '[.comments[].body | select(test("<!-- bug-fixer:auto-paused -->"))] | length > 0' <<< "$pr" > /dev/null; then
+              printf 'Auto-fix paused after %s automatic rounds. Comment `/bug-fixer` (or review with `/bug-fixer`) to continue.\n\n<!-- bug-fixer:auto-paused -->' \
+                "$rounds" | gh pr comment "$PR" --repo "$REPO" --body-file - > /dev/null
+            fi
+            echo "::notice::Round limit ($MAX_ROUNDS) reached for #$PR"
+            exit 0
+          fi
+
+          actionable=$(python3 .github/scripts/agent/pr-threads.py "$REPO" "$PR" | jq '[.[] | select(.actionable)] | length')
+          if (( actionable == 0 )); then
+            echo "No unaddressed review threads on #$PR"
+            exit 0
+          fi
+          echo "$actionable unaddressed review thread(s) on #$PR; dispatching the bug fixer (round $((rounds + 1)) of $MAX_ROUNDS)"
+          gh workflow run agent-bug-fixer.yml --repo "$REPO" -f pr="$PR"

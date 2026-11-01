@@ -200,6 +200,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      actions: write
     env:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
