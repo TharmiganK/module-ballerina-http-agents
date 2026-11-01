@@ -57,18 +57,29 @@ def select(state):
     return best, best_reason
 
 
+def list_issues(repo, label):
+    listed = subprocess.run(
+        ["gh", "issue", "list", "--repo", repo, "--state", "all", "--label", label,
+         "--limit", "2000", "--json", "number,title,state,labels,body,url"],
+        capture_output=True, text=True, check=True)
+    return json.loads(listed.stdout)
+
+
 def known_issues():
+    """Issues of this repository plus, for a mirror, the upstream trackers in UPSTREAM_ISSUE_REPOS
+    ("owner/repo:label" entries separated by spaces)."""
+    sources = [(os.environ["REPO"], "module/http"), (os.environ["REPO"], "agent/generated")]
+    for entry in os.environ.get("UPSTREAM_ISSUE_REPOS", "").split():
+        repo, _, label = entry.partition(":")
+        sources.append((repo, label or "module/http"))
     issues = {}
-    for label in ("module/http", "agent/generated"):
-        listed = subprocess.run(
-            ["gh", "issue", "list", "--repo", os.environ["REPO"], "--state", "all", "--label", label,
-             "--limit", "1000", "--json", "number,title,state,labels,body"],
-            capture_output=True, text=True, check=True)
-        for issue in json.loads(listed.stdout):
-            labels = [l["name"] for l in issue["labels"]]
-            issues[issue["number"]] = {"number": issue["number"], "title": issue["title"], "state": issue["state"],
-                                       "labels": labels, "body": (issue["body"] or "")[:500]}
-    return sorted(issues.values(), key=lambda i: i["number"])
+    for repo, label in sources:
+        for issue in list_issues(repo, label):
+            issues[issue["url"]] = {"repo": repo, "number": issue["number"], "url": issue["url"],
+                                    "title": issue["title"], "state": issue["state"],
+                                    "labels": [l["name"] for l in issue["labels"]],
+                                    "body": (issue["body"] or "")[:500]}
+    return sorted(issues.values(), key=lambda i: (i["repo"], i["number"]))
 
 
 def main():

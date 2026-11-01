@@ -106,7 +106,7 @@ Tie-breakers: a suspected bug that does not reproduce is dropped, not filed as a
 The plan job writes:
 
 - `agent-context/scope.json`: the selected unit with its spec sections, file lists and test packages, the `master` SHA of the previous analysis of this unit and the files changed since.
-- `agent-context/known-issues.json`: title, number, state, labels and the first 500 characters of the body for all issues in this repository labelled `module/http` or `agent/generated`, open and closed. Upstream, this would also include `ballerina-platform/ballerina-library` issues labelled `module/http`.
+- `agent-context/known-issues.json`: title, number, state, labels and the first 500 characters of the body for all issues in this repository labelled `module/http` or `agent/generated`, open and closed, plus the upstream trackers in the repository variable `UPSTREAM_ISSUE_REPOS` (`owner/repo:label` entries; for this mirror `ballerina-platform/ballerina-library:module/http`). The prompt also requires searching those trackers and open PRs in `UPSTREAM_CODE_REPO` for every candidate. The first real run filed two bugs that upstream already tracked (one with a fix PR in review) because only this repository's issues were checked.
 
 ### Agent instructions (summary)
 

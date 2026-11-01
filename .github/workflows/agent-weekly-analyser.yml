@@ -49,6 +49,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           SCOPE_INPUT: ${{ inputs.scope }}
+          UPSTREAM_ISSUE_REPOS: ${{ vars.UPSTREAM_ISSUE_REPOS }}
         run: python3 .github/scripts/agent/analyser-plan.py
       - id: info
         env:
@@ -97,6 +98,8 @@ jobs:
         env:
           SHA: ${{ needs.plan.outputs.sha }}
           DRY_RUN: ${{ needs.plan.outputs.dry_run }}
+          UPSTREAM_ISSUE_REPOS: ${{ vars.UPSTREAM_ISSUE_REPOS }}
+          UPSTREAM_CODE_REPO: ${{ vars.UPSTREAM_CODE_REPO }}
         run: |
           set -euo pipefail
           mkdir -p agent-output agent-security
@@ -113,6 +116,8 @@ jobs:
             echo
             echo "- Repository: $REPO"
             echo "- Scope unit: $UNIT (details in agent-context/scope.json)"
+            echo "- Issue trackers to check for duplicates: $REPO ${UPSTREAM_ISSUE_REPOS:-}"
+            echo "- Upstream code repository to check for open fix PRs: ${UPSTREAM_CODE_REPO:-none}"
             echo "- Checked-out commit (for permalinks): $SHA"
             echo "- Reproduction group prefix: $GROUP_PREFIX (use ${GROUP_PREFIX}1, ${GROUP_PREFIX}2, ...)"
             echo "- Workflow run: $RUN_URL"
