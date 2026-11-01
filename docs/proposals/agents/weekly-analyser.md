@@ -32,7 +32,7 @@ It is the third agent of the PoC, after the [bug fixer](bug-fixer-agent.md) and 
 | Trigger | Notes |
 |---|---|
 | `schedule: cron '0 1 * * 1'` | Weekly, Monday 01:00 UTC, outside working hours in Sri Lanka. |
-| `workflow_dispatch` with optional inputs `scope` (a scope unit id) and `dry_run` (boolean) | Manual runs for validation; `dry_run` produces the report and verification results without filing anything. |
+| `workflow_dispatch` with optional inputs `scope` (comma-separated scope unit ids), `dry_run` (boolean), and `custom_scopes` / `seed` (used by [find-similar](#find-similar-mode)) | Manual runs for validation; `dry_run` produces the report and verification results without filing anything. |
 
 Both are only startable by users with write access, so no actor check is needed beyond GitHub's.
 
@@ -213,7 +213,7 @@ Every run, including dry runs and runs with no findings, writes a report to the 
 
 ### Security findings
 
-Security findings never appear in issues, PR comments, step summaries or the run report (which shows only a count). In this private PoC repository, Actions logs and artifacts are only visible to collaborators; upstream they would be public, so the design keeps security content out of logs regardless: the agent returns it in structured output only, the collect step writes it to a separate file that is never printed, and the artifact containing it is either encrypted or not uploaded, depending on the delivery option.
+Security findings never appear in issues, PR comments, step summaries or the run report (which shows only a count). Actions logs and artifacts of public repositories (this repository since the end of the PoC, and upstream) are public, so the design keeps security content out of them: the agent returns it in structured output only, the collect step writes it to a separate file that is never printed, and the artifact containing it is either encrypted or not uploaded, depending on the delivery option.
 
 Delivery options (decision needed before implementation):
 
@@ -224,7 +224,7 @@ Delivery options (decision needed before implementation):
 | **C. Restricted-label issue** | File a normal issue labelled `Area/Security` in this private repository. | No: issues in a public repository are public. | None. | Simplest for the PoC, but must be replaced before going upstream. |
 | **D. Encrypted artifact** | Encrypt the findings with a maintainer's public key (`age`) and upload them as an artifact; post nothing. | Yes. | One public key in the repository or a variable. | No notification by itself; someone must download and decrypt. Useful as a fallback alongside A or B. |
 
-Decision: **A** for upstream. Draft advisories are not available in private repositories (the advisories API returns 404 for this private mirror while it works for the public upstream repository), so the channel is switchable through the repository variable `SECURITY_CHANNEL`:
+Decision: **A** for upstream. Draft advisories are not available in private repositories (the advisories API returns 404 for this private mirror while it works for the public upstream repository), so the channel is switchable through the repository variable `SECURITY_CHANNEL`. The repository used `issue` while private and uses `advisory` now that it is public:
 
 - `advisory`: draft repository security advisory per finding, created with the `SECURITY_ADVISORY_TOKEN` secret (a fine-grained PAT or App token with "Repository security advisories: write"), used only by `publish-security`; dedup by a fingerprint in the advisory description.
 - `issue`: an issue labelled `Area/Security` (plus `module/http`, `agent/generated`), titled `[Security] ...`, with a note to move it to a security advisory before the finding or the repository becomes public. Used in this private PoC repository; `analyser-security.py` refuses this channel if the repository is public, since `Area/Security` is a public label upstream. None of the Security tab's features work here: draft advisories and private vulnerability reporting are public-repository features, and code scanning alerts on private repositories need GitHub Advanced Security.
@@ -239,10 +239,9 @@ Transfer between jobs: the agent job splits the structured output into the publi
 | `--max-turns` | 150 |
 | Model | `claude-opus-5-5` |
 | Units per run | `ANALYSER_UNITS_PER_RUN`, default 4, in parallel |
-| Public issues per run | ≤ `ANALYSER_MAX_ISSUES`, default 6, across all units |
+| Public issues per run | ≤ `ANALYSER_MAX_ISSUES` across all units (code default 6; this repository sets 32, so every verified finding is filed) |
 | Security findings per run | ≤ 3, across all units |
-| Measured per unit | 6–9 minutes and 28–53 turns in the first runs (`sse-streaming`); runner minutes are free on public repositories |
-| Estimated Claude usage | 60–150 turns, 3–8M mostly cached input tokens per run; the largest of the three agents |
+| Measured per unit | 5–9 minutes of agent job time, 28–59 turns and $1.19–2.14 per unit in the PoC runs ([report](poc-report.md)); runner minutes are free on public repositories |
 
 ## Find-similar mode
 

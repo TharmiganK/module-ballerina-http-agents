@@ -10,7 +10,7 @@ _Status_: Implemented for PoC
 
 A GitHub Actions based AI agent that investigates bug reports, reproduces them as Ballerina tests, traces the root cause from the public API down to the native layer, proposes a fix plan, discusses it with maintainers, and, once a maintainer approves the plan, implements the fix and opens a PR with the reproduction test as a regression test. It also responds to review comments on its own PRs.
 
-The agent runs on [`anthropics/claude-code-action@v1`](https://github.com/anthropics/claude-code-action) authenticated with a Claude subscription OAuth token. This is the first of three agents in the PoC (bug fixer, PR QA agent, weekly analyser) run in the private mirror `TharmiganK/module-ballerina-http-agents` before proposing them for the `ballerina-platform` repositories.
+The agent runs on [`anthropics/claude-code-action@v1`](https://github.com/anthropics/claude-code-action) authenticated with a Claude subscription OAuth token. This is the first of three agents in the PoC (bug fixer, PR QA agent, weekly analyser) run in the mirror `TharmiganK/module-ballerina-http-agents` (private for most of the PoC, now public) before proposing them for the `ballerina-platform` repositories.
 
 ## Goals
 
@@ -18,7 +18,7 @@ The agent runs on [`anthropics/claude-code-action@v1`](https://github.com/anthro
 - Keep a human in control: nothing is implemented until a maintainer approves a specific, immutable plan version, and nothing is merged by the agent.
 - Back every bug claim with a reproduction test that was actually run. No reproduction, no bug claim.
 - Make the agent's GitHub write access deterministic and bounded, so prompt injection through issue content cannot cause arbitrary writes.
-- Keep Actions minutes and Claude usage low enough to run on a personal private repository.
+- Keep Actions minutes and Claude usage low enough to run on a personal account.
 
 ## Non-goals
 
@@ -86,6 +86,7 @@ All phases live in `.github/workflows/agent-bug-fixer.yml`.
 | investigate | `issues: [labeled]` | label is `agent/investigate`; issue has `Type/Bug`; no run in progress and no open agent PR |
 | discuss | `issue_comment: [created]` | the comment's first word is the `/bug-fixer` command; not a PR; issue is `agent/plan-ready`, `agent/needs-info` or `agent/failed`; comment author type is not `Bot`; `author_association` is `OWNER`, `MEMBER` or `COLLABORATOR` |
 | implement | `issues: [labeled]` | label is `agent/approved`; issue is `agent/plan-ready` (or `agent/failed` after an approved plan); no open agent PR |
+| review (auto) | `workflow_dispatch` with input `pr`, from `agent-auto-fix.yml` | PR is an open agent PR with `agent/auto-fix` and has actionable review threads |
 | review | `pull_request_review: [submitted]`, `issue_comment: [created]` on a PR | the review body or comment starts with `/bug-fixer`; PR has `agent/generated`; head branch matches `agent/issue-*`; author is not a bot; `author_association` as above |
 
 The agent engages only on demand: maintainers trigger investigation and implementation with labels, and discussion and review handling with the `/bug-fixer` command (first word of an issue comment, PR comment or review body). Other comments and reviews are ignored, so maintainers can discuss freely. To get replies on inline review comments, put `/bug-fixer` in the review body; a `/bug-fixer` PR comment is answered with a summary only.
@@ -232,19 +233,19 @@ A post-step in the agent job writes `git format-patch master..HEAD` to an artifa
 1. Rejects the patch if it touches `.github/`, `.claude/`, `CLAUDE.md` or `docs/proposals/`, exceeds 25 files or 1500 changed lines, or does not add a test with group `repro_<issue>`.
 2. Applies it on `agent/issue-<issue>` from the current `master` (not the commit the agent started from: if `master` changed workflow files during the run, GitHub rejects a `GITHUB_TOKEN` push of a branch whose workflow files differ from the default branch) and pushes. The workflow owns these branches: if the branch already exists without an open PR (a leftover from a failed run, for example one that pushed but could not open the PR), it is replaced with `--force-with-lease` pinned to the SHA seen at the start of the publish step; if an open PR uses it, the job fails.
 3. Opens one PR with `Fixes #<issue>`, the agent's body (flow analysis, fix rationale, before/after test evidence), a `<!-- ci-tests: ... -->` marker from `ci_tests`, and label `agent/generated`.
-4. Dispatches `agent-pr-ci.yml` on the branch.
+4. Dispatches `agent-pr-ci.yml` on the branch, and `agent-qa.yml` for an automatic QA review of the new PR.
 5. Sets `agent/pr-open` on the issue. For `blocked`, posts the reason and sets `agent/plan-ready` back so the plan can be revised.
 
 #### Review
 
-The agent checks out the PR branch, reads the review and its comments from the context file, and either explains or changes the code.
+Triggered by a maintainer's review or PR comment starting with `/bug-fixer`, or in `auto` mode by `agent/auto-fix` (see below). The agent checks out the PR branch and reads the context file: the trigger, the PR conversation, all review comments, and every open review thread classified by source and by whether it still needs an answer (`pr-threads.py`). It changes the code or explains why not.
 
 ```json
 {
   "type": "object",
   "required": ["replies", "summary", "changed"],
   "properties": {
-    "replies": {"type": "array", "maxItems": 10, "items": {"type": "object", "required": ["comment_id", "body"], "properties": {"comment_id": {"type": "integer"}, "body": {"type": "string", "maxLength": 10000}}}},
+    "replies": {"type": "array", "maxItems": 20, "items": {"type": "object", "required": ["comment_id", "body", "resolve"], "properties": {"comment_id": {"type": "integer"}, "body": {"type": "string", "maxLength": 10000}, "resolve": {"type": "boolean"}}}},
     "summary": {"type": "string", "maxLength": 20000},
     "changed": {"type": "boolean"},
     "ci_tests": {"type": "array", "items": {"type": "string"}}
@@ -252,7 +253,7 @@ The agent checks out the PR branch, reads the review and its comments from the c
 }
 ```
 
-The publish job validates that every `comment_id` belongs to the triggering review, posts the replies in their threads, posts at most one summary comment, applies the patch with the same path and size rules as implement, pushes to the PR branch and dispatches CI again.
+The publish job re-reads the review threads and accepts replies only in the triggering review and in open threads started by a maintainer or the QA agent; it posts the replies, resolves the threads whose reply has `resolve: true`, posts one summary comment (with a hidden round marker in `auto` mode), applies the patch with the same path and size rules as implement, pushes to the PR branch, dispatches CI again, and, if the PR has `agent/auto-fix`, schedules another auto-fix check.
 
 #### Review threads, QA findings and thread resolution
 
@@ -322,22 +323,20 @@ Prompts live in `.github/agent-prompts/bug-fixer/` so that they can be iterated 
 
 A workflow step concatenates `common.md`, the phase file and a generated header (repository, issue or PR number, run URL, context file paths) into the action's `prompt` input.
 
-### Limits and cost estimates
+### Limits and measured cost
 
-Initial values, to be calibrated from the validation run:
+| Phase | `timeout-minutes` (agent job) | `--max-turns` | Measured agent job | Measured Claude usage | Model |
+|---|---|---|---|---|---|
+| investigate | 55 | 60 | 3–7 min | 21–29 turns, $0.61–0.80 | `claude-opus-5-5` |
+| discuss | 35 | 30 | 6 min | 24 turns, $0.69 | `claude-opus-5-5` |
+| implement | 75 | 100 | 6–10 min | 23–37 turns, $0.52–0.70 | `claude-opus-5-5` |
+| review | 60 | 80 | 11 min | 25 turns, $0.76 | `claude-opus-5-5` |
 
-| Phase | `timeout-minutes` (agent job) | `--max-turns` | Estimated Actions minutes | Model |
-|---|---|---|---|---|
-| investigate | 55 | 60 | 20–35 | `claude-opus-5-5` |
-| discuss | 35 | 30 | 5–20 | `claude-opus-5-5` |
-| implement | 75 | 100 | 30–60 | `claude-opus-5-5` |
-| review | 60 | 80 | 20–45 | `claude-opus-5-5` |
-
-Test runs dominate the minutes: `bal test --groups` filters which tests execute but still compiles the whole test package and starts all of its module-level listeners. Claude usage counts against the Teams plan's limits; a first estimate is 1–4M mostly cached input tokens per investigate or implement run, to be replaced with measured values from the action's `execution_file`.
+Measured in the PoC validation ([report](poc-report.md)); costs are list-price equivalents consumed from the Teams subscription. Test runs dominate the job time: `bal test --groups` filters which tests execute but still compiles the whole test package and starts its module-level listeners. The limits keep generous headroom over the measurements.
 
 ### Failure handling
 
-- Any failed agent or publish job triggers a final `if: failure()` step that adds `agent/failed`, removes the in-progress label and posts a comment with the run URL.
+- Any failed agent or publish job triggers a final `if: failure()` step that posts a comment with the run URL. For investigate and implement it also replaces the issue's state label with `agent/failed`; a failed discuss or review keeps the current state.
 - Schema validation failure or a cap violation in a publish job is a failure; nothing partial is published.
 - `max-turns` or timeout exhaustion is a failure; the run log shows how far the agent got.
 - Re-running is done by re-applying the trigger label.

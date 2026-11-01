@@ -30,13 +30,15 @@ It is the second agent of the PoC, after the [bug fixer](bug-fixer-agent.md), an
 
 | Trigger | Condition | Notes |
 |---|---|---|
-| `pull_request: [opened, reopened, ready_for_review]` | Not a draft; no `agent/qa-skip` label; not only docs (`paths-ignore: docs/**, **/*.md`) | One automatic review per PR. Pushes (`synchronize`) do not re-run it, to save minutes; use `/qa` after significant updates. |
+| `pull_request: [opened, reopened, ready_for_review]` | Not a draft; not from a fork (fork PRs get no secrets; use `/qa`); no `agent/qa-skip` label; not only docs (`paths-ignore: docs/**, **/*.md`) | One automatic review per PR. Pushes (`synchronize`) do not re-run it, to save minutes; use `/qa` after significant updates. |
 | `issue_comment: [created]` on a PR | Comment body's first line is exactly `/qa`; author is not a bot and has write access | On-demand review of the current head. The gate reacts with 👀 so the requester sees it was picked up. |
 | `workflow_dispatch` with input `pr` | Dispatched by the bug fixer's `publish-code` job after opening a PR | Agent PRs are opened with `GITHUB_TOKEN` and do not trigger `pull_request`; this gives them an automatic second review. |
 
 The write-access check is the action's built-in check plus the same `author_association` pre-filter as the bug fixer. Reviews posted by the QA agent use `GITHUB_TOKEN`, so they do not trigger the bug fixer's review phase on agent PRs; a maintainer decides which QA findings the bug fixer should act on by reviewing the PR themselves.
 
 Concurrency: `group: qa-<pr>` with `cancel-in-progress: true`, so a newer `/qa` replaces a running one.
+
+On agent PRs the bug fixer answers the QA agent's threads (replying and resolving them) when a maintainer asks with `/bug-fixer`, or automatically when the PR has `agent/auto-fix`; since a review posted with `GITHUB_TOKEN` triggers no workflows, the QA publish job dispatches the auto-fix scheduler itself on such PRs.
 
 ## Design
 
@@ -166,8 +168,7 @@ Same as the bug fixer's investigate phase: `Read`, `Glob`, `Grep`, `Edit`, `Writ
 | Model | `claude-opus-5-5` |
 | Inline comments | ≤ 8 per review |
 | Findings returned | ≤ 12 |
-| Estimated Actions minutes | 15–30 per review (build 3–4, verification 3–8 per affected package) |
-| Estimated Claude usage | Similar to a bug fixer investigation: 20–40 turns, ~1M mostly cached input tokens |
+| Measured | 2–5 minutes of agent job time and 10–24 turns, $0.39–0.60 per review in the PoC ([report](poc-report.md)) |
 
 ### Fork PRs upstream
 

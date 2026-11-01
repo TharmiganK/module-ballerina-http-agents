@@ -1,7 +1,7 @@
 # PoC Report: Agentic GitHub Workflows for `module-ballerina-http`
 
 _Owners_: @TharmiganK  
-_Date_: 2026/11/01  
+_Date_: 2026/11/01 (updated the same day after follow-up changes)  
 _Repository_: [TharmiganK/module-ballerina-http-agents](https://github.com/TharmiganK/module-ballerina-http-agents) (public mirror of `ballerina-platform/module-ballerina-http`)
 
 ## Summary
@@ -82,6 +82,22 @@ All of these were found by real runs; none came from the agents' reasoning.
 | Discuss phase could not create the first plan; reproduction claims not verified | Gaps in the evidence rule | `new_plan_version: 1` allowed; `verify-repro.sh` / `verify-findings.py` re-run reproductions |
 | Cosmetic: table rendering, escaped newlines, Claude Code attribution line | Noisy posts | Fixed in the publish scripts |
 
+## Changes after the initial validation
+
+Maintainer feedback on the validated agents led to these changes, each reflected in the design documents:
+
+| Change | Why | Status |
+|---|---|---|
+| Bug fixer engages only on demand: labels for investigate and implement, a `/bug-fixer` command (first word of an issue comment, PR comment or review body) for discussion and review handling | Every maintainer comment previously started a run | Implemented |
+| A single `agent/*` state label per issue; `agent/investigate` and `agent/approved` are triggers consumed when the run starts | Issues accumulated several agent labels | Implemented; issues #1 and #4 cleaned up |
+| The bug fixer answers and resolves the QA agent's review threads (never third-party bot threads); replies carry `resolve` | On PR #9 the QA findings were fixed in code but their threads stayed open | Implemented |
+| `agent/auto-fix` on an agent PR: after reviewers are quiet for 10 minutes (each new comment restarts the wait), one bug fixer round addresses all open maintainer and QA threads; at most 3 automatic rounds | Hands-off handling of review bursts in continuous PR work | Implemented; first test on PR #9 in progress |
+| `agent/find-similar` on an issue or PR: a scoper agent derives the defect pattern and 1–3 scope units, and the analyser hunts for other occurrences with verified reproductions | Find the same mistake elsewhere once one instance is known | Implemented; first test with PR #9 as the seed in progress |
+| Weekly analyser runs 4 scope units in parallel with a per-run issue cap (`ANALYSER_MAX_ISSUES`, set to 32) | One unit per week meant a four-month cycle and findings over the cap were lost | Implemented; parallel dry run validated |
+| The repository is public; security findings are encrypted between jobs and delivered as draft security advisories | Free runner minutes and the same security channel as upstream | Implemented; advisory delivery not yet exercised |
+
+Two workflow-trigger problems surfaced while adding these and were fixed: GitHub runs `pull_request`-type workflows from the PR's test-merge commit, which can predate a new workflow (label triggers now use `pull_request_target`, which never checks out PR code), and workflow-level concurrency let unrelated events cancel the auto-fix wait (moved to job level).
+
 ## Cost and time
 
 - **Claude usage**: $0.4–0.8 per bug fixer or QA run, $1.2–2.1 per analyser unit, at list-price equivalents, consumed from the Teams subscription. A weekly analyser run with four units is about $6–7; a typical bug from investigation to merged-ready PR (investigate, one discussion, implement, one review round) is about $3.
@@ -92,6 +108,7 @@ All of these were found by real runs; none came from the agents' reasoning.
 ## Open items
 
 - **Security advisory delivery** is implemented (encrypted hand-off between jobs, draft advisory per finding) but untested end to end: the real analyser runs produced no security findings. Validate with one seeded vulnerability or the next real finding.
+- **Auto-fix and find-similar** were implemented after the initial validation; their first runs on PR #9 were in progress when this report was updated.
 - **QA job wall time anomaly** on PR #9: 63 minutes of job time against 3.5 minutes of step time; to be investigated if it recurs.
 - **Bot-authored PR runs** show `action_required` for `pull_request` workflows; harmless (no minutes used), but noisy in the Actions list.
 - **Cross-unit dedup** in the analyser relies on unit boundaries; the same defect described differently by two units is not caught.
