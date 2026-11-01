@@ -133,6 +133,13 @@ service /formCharset on new http:Listener(formUrlEncodedCharsetBindingPort, http
         return res;
     }
 
+    resource function get spaceToken() returns http:Response {
+        http:Response res = new;
+        res.setPayload("access_token=abc&expires_in=28800&scope=&token_type=bearer",
+            mime:APPLICATION_FORM_URLENCODED + " ; charset=utf-8");
+        return res;
+    }
+
     resource function get jsonPayload() returns http:Response {
         http:Response res = new;
         res.setPayload({name: "abc", age: 10}, "application/json; charset=utf-8");
@@ -205,4 +212,45 @@ function testTextResponseWithCharsetBindToString() returns error? {
 function testXmlResponseWithCharsetBindToXml() returns error? {
     xml res = check formCharsetClient->/xmlPayload;
     test:assertEquals(res, xml `<name>abc</name>`);
+}
+
+@test:Config {
+    groups: ["repro_4"]
+}
+function testFormUrlEncodedResponseWithSpaceBeforeParamBindToMapString() returns error? {
+    map<string> res = check formCharsetClient->/spaceToken;
+    test:assertEquals(res, {"access_token": "abc", "expires_in": "28800", "scope": "", "token_type": "bearer"});
+}
+
+@test:Config {
+    groups: ["repro_4"]
+}
+function testFormUrlEncodedResponseWithCharsetBindToStatusCodeRecord() returns error? {
+    http:StatusCodeClient statusCodeClient = check new (string `localhost:${formUrlEncodedCharsetBindingPort}/formCharset`);
+    record {|*http:Ok; map<string> body;|} res = check statusCodeClient->/token;
+    test:assertEquals(res.body, {"access_token": "abc", "expires_in": "28800", "scope": "", "token_type": "bearer"});
+}
+
+// The media type, not the target type, selects the payload builder even when the content type has
+// parameters, so a JSON object payload cannot be bound to `string`.
+@test:Config {
+    groups: ["repro_4"]
+}
+function testJsonResponseWithCharsetBindToStringFails() {
+    string|error res = formCharsetClient->/jsonPayload;
+    test:assertTrue(res is http:PayloadBindingError, "Expected a payload binding error");
+}
+
+@test:Config {
+    groups: ["repro_4"]
+}
+function testTextResponseWithCharsetBindToRecordFails() {
+    CharsetPerson|error res = formCharsetClient->/textPayload;
+    if res is error {
+        test:assertTrue(res is http:PayloadBindingError, "Expected a payload binding error");
+        test:assertTrue(res.message().startsWith("incompatible typedesc"),
+            "Unexpected error message: " + res.message());
+    } else {
+        test:assertFail("Expected an error, found: " + res.toString());
+    }
 }

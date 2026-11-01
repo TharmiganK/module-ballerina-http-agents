@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+- [Client data binding now selects the payload builder from the media type also when the response content type has parameters (e.g. `charset`), as it already did for content types without parameters. For example, an `application/json; charset=utf-8` response bound to `string` no longer returns the raw text; it is bound as JSON and fails with a `PayloadBindingError` unless the payload is a JSON string. Similarly, a `text/plain; charset=utf-8` response can no longer be bound to a record or `xml`](https://github.com/TharmiganK/module-ballerina-http-agents/issues/4)
+
 ### Fixed
 - [Fix client data binding failure when the response content type has parameters (e.g. `application/x-www-form-urlencoded; charset=utf-8`)](https://github.com/TharmiganK/module-ballerina-http-agents/issues/4)
 
