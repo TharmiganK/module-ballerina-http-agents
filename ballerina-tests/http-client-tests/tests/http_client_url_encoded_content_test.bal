@@ -125,7 +125,37 @@ service /formCharset on new http:Listener(formUrlEncodedCharsetBindingPort, http
             mime:APPLICATION_FORM_URLENCODED + "; charset=utf-8");
         return res;
     }
+
+    resource function get upperCaseToken() returns http:Response {
+        http:Response res = new;
+        res.setPayload("access_token=abc&expires_in=28800&scope=&token_type=bearer",
+            "Application/X-WWW-Form-Urlencoded");
+        return res;
+    }
+
+    resource function get jsonPayload() returns http:Response {
+        http:Response res = new;
+        res.setPayload({name: "abc", age: 10}, "application/json; charset=utf-8");
+        return res;
+    }
+
+    resource function get textPayload() returns http:Response {
+        http:Response res = new;
+        res.setPayload("hello", "text/plain; charset=utf-8");
+        return res;
+    }
+
+    resource function get xmlPayload() returns http:Response {
+        http:Response res = new;
+        res.setPayload(xml `<name>abc</name>`, "application/xml; charset=utf-8");
+        return res;
+    }
 }
+
+type CharsetPerson record {|
+    string name;
+    int age;
+|};
 
 final http:Client formCharsetClient = check new (string `localhost:${formUrlEncodedCharsetBindingPort}/formCharset`);
 
@@ -143,4 +173,36 @@ function testFormUrlEncodedResponseWithCharsetBindToMapString() returns error? {
 function testFormUrlEncodedResponseWithCharsetBindToNilableMapString() returns error? {
     map<string>? res = check formCharsetClient->/token;
     test:assertEquals(res, {"access_token": "abc", "expires_in": "28800", "scope": "", "token_type": "bearer"});
+}
+
+@test:Config {
+    groups: ["repro_4"]
+}
+function testUpperCaseFormUrlEncodedResponseBindToMapString() returns error? {
+    map<string> res = check formCharsetClient->/upperCaseToken;
+    test:assertEquals(res, {"access_token": "abc", "expires_in": "28800", "scope": "", "token_type": "bearer"});
+}
+
+@test:Config {
+    groups: ["repro_4"]
+}
+function testJsonResponseWithCharsetBindToRecord() returns error? {
+    CharsetPerson res = check formCharsetClient->/jsonPayload;
+    test:assertEquals(res, {name: "abc", age: 10});
+}
+
+@test:Config {
+    groups: ["repro_4"]
+}
+function testTextResponseWithCharsetBindToString() returns error? {
+    string res = check formCharsetClient->/textPayload;
+    test:assertEquals(res, "hello");
+}
+
+@test:Config {
+    groups: ["repro_4"]
+}
+function testXmlResponseWithCharsetBindToXml() returns error? {
+    xml res = check formCharsetClient->/xmlPayload;
+    test:assertEquals(res, xml `<name>abc</name>`);
 }
