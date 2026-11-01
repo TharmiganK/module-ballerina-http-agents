@@ -1,5 +1,6 @@
 name: Agent - Find similar defects
-run-name: ${{ github.event.label.name == 'agent/find-similar' && format('Find defects like #{0}', github.event.issue.number || github.event.pull_request.number) || format('Ignore label {0} on #{1}', github.event.label.name, github.event.issue.number || github.event.pull_request.number) }}
+run-name: >-
+  ${{ github.event.label.name == 'agent/find-similar' && format('Find defects like #{0}', github.event.issue.number || github.event.pull_request.number) || format('Ignore label {0} on #{1}', github.event.label.name, github.event.issue.number || github.event.pull_request.number) }}
 
 # Label an issue or a PR with agent/find-similar: a scoper agent derives the defect pattern from it and generates up
 # to three scope units, and the defect scanner hunts for other occurrences in those units (verified reproductions,
