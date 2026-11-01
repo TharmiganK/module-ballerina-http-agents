@@ -160,12 +160,17 @@ Output schema:
   "properties": {
     "outcome": {"enum": ["plan-ready", "needs-info"]},
     "comment": {"type": "string", "maxLength": 60000},
-    "test_package": {"type": "string"}
+    "test_package": {"type": "string"},
+    "test_filter": {"type": "string"}
   }
 }
 ```
 
 The comment has these sections: Verdict; Reproduction (test code in a collapsed block, the command, an excerpt of the failing output); Code flow; Root cause; `Plan v1` (steps, files to change, tests to add and run, risks); Confidence. When the bug cannot be reproduced, the outcome is `needs-info`, the comment lists what was tried and what is needed, and the comment must not call it a bug.
+
+**Reproduction verification.** The agent's own report of the failing output is not trusted. After Claude finishes, the agent job runs `.github/scripts/agent/verify-repro.sh`, which re-runs group `repro_<issue>` in the reported `test_package` (or the `test_filter` class for a Java reproduction) in the agent's workspace, with stale reports removed first. It reads the test results file rather than the exit code, so a compilation failure or an empty group does not count. The result (`reproduced`, `not-reproduced` or `not-run`, with counts and the first failure message) goes to `agent-output/repro.json`.
+
+For `plan-ready`, the publish job requires `reproduced`: it appends a "Reproduction verified by the workflow" note with the command and failure message, then the plan marker. Otherwise it downgrades the outcome to `needs-info` and posts an "Investigation (unverified)" comment with the agent's report collapsed and its plan headings renamed to "Proposed plan (unverified)", with no marker, so it cannot be approved. This implements the rule that an unreproduced finding is a question, not a bug.
 
 The publish job posts the comment, adds `agent/plan-ready` or `agent/needs-info`, and removes `agent/investigating`.
 
@@ -180,12 +185,14 @@ The agent reads the full thread, focusing on the triggering comment, and decides
   "properties": {
     "outcome": {"enum": ["plan-ready", "needs-info", "no-change"]},
     "comment": {"type": "string", "maxLength": 60000},
-    "new_plan_version": {"type": "integer", "minimum": 2}
+    "new_plan_version": {"type": "integer", "minimum": 1},
+    "test_package": {"type": "string"},
+    "test_filter": {"type": "string"}
   }
 }
 ```
 
-If `new_plan_version` is set, the comment must contain the full `Plan vN` section; the publish job checks that `N` is exactly the previous version plus one and adds the marker. Exactly one comment is posted per run. `no-change` keeps the current state label.
+If `new_plan_version` is set, the comment must contain the full `Plan vN` section; the publish job checks that `N` is exactly the previous version plus one and adds the marker. A `needs-info` issue reaches its first plan through discussion with `new_plan_version: 1`; that plan goes through the same reproduction verification as the investigate phase. Exactly one comment is posted per run. `no-change` keeps the current state label.
 
 #### Implement
 
@@ -298,8 +305,8 @@ Initial values, to be calibrated from the validation run:
 
 | Phase | `timeout-minutes` (agent job) | `--max-turns` | Estimated Actions minutes | Model |
 |---|---|---|---|---|
-| investigate | 45 | 60 | 15–30 | `claude-opus-5-5` |
-| discuss | 20 | 30 | 5–10 | `claude-opus-5-5` |
+| investigate | 55 | 60 | 20–35 | `claude-opus-5-5` |
+| discuss | 35 | 30 | 5–20 | `claude-opus-5-5` |
 | implement | 75 | 100 | 30–60 | `claude-opus-5-5` |
 | review | 60 | 80 | 20–45 | `claude-opus-5-5` |
 

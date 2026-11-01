@@ -1,10 +1,30 @@
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["outcome", "comment"],
+  "required": [
+    "outcome",
+    "comment"
+  ],
   "properties": {
-    "outcome": {"type": "string", "enum": ["plan-ready", "needs-info"]},
-    "comment": {"type": "string", "minLength": 1, "maxLength": 60000},
-    "test_package": {"type": "string"}
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "plan-ready",
+        "needs-info"
+      ]
+    },
+    "comment": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60000
+    },
+    "test_package": {
+      "type": "string",
+      "maxLength": 100
+    },
+    "test_filter": {
+      "type": "string",
+      "maxLength": 200
+    }
   }
 }

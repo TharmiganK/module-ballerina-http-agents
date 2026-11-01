@@ -15,7 +15,10 @@ A maintainer asked you to investigate the bug report in `agent-context/thread.js
 Return the structured result:
 
 - `outcome`: `plan-ready` if the reproduction fails for the reported reason and you have a root cause and plan; otherwise `needs-info`.
-- `test_package`: the test package (or `native` / `compiler-plugin`) holding the reproduction.
+- `test_package`: the directory name of the Ballerina test package holding the reproduction (for example `http-client-tests`), or `native` / `compiler-plugin` for a Java reproduction.
+- `test_filter`: for a Java reproduction only, the fully qualified test class name.
+
+After you finish, the workflow re-runs group `repro_<issue>` in `test_package` itself. Leave the reproduction test and its port constant in place: do not delete or revert them. The plan is only published as approvable if that re-run fails; otherwise the report is posted as unverified.
 - `comment`: the Markdown comment to post on the issue, with these sections:
 
 ```markdown

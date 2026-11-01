@@ -106,8 +106,8 @@ jobs:
           esac
 
           case "$phase" in
-            investigate) timeout=45 max_turns=60 ;;
-            discuss)     timeout=20 max_turns=30 ;;
+            investigate) timeout=55 max_turns=60 ;;
+            discuss)     timeout=35 max_turns=30 ;;
             implement)   timeout=75 max_turns=100 ;;
             review)      timeout=60 max_turns=80 ;;
             *)           timeout=5 max_turns=1 ;;
@@ -236,6 +236,13 @@ jobs:
               "$EXECUTION_FILE" > agent-output/usage.json || true
             cat agent-output/usage.json || true
           fi
+
+      - name: Verify reproduction
+        if: >-
+          steps.claude.outcome == 'success'
+          && (env.PHASE == 'investigate'
+            || (env.PHASE == 'discuss' && fromJSON(steps.claude.outputs.structured_output || '{}').new_plan_version == 1))
+        run: .github/scripts/agent/verify-repro.sh
 
       - uses: actions/upload-artifact@v7
         if: always() && steps.claude.outcome != 'skipped'

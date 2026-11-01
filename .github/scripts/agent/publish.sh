@@ -12,6 +12,7 @@ MODE="${1:?usage: publish.sh <phase|fail>}"
 RESULT=agent-output/result.json
 META=agent-output/meta.json
 PATCH=agent-output/changes.patch
+REPRO=agent-output/repro.json
 BOT=github-actions[bot]
 MAX_FILES=25
 MAX_LINES=1500
@@ -91,6 +92,42 @@ apply_patch() {
   echo "Patch OK: $(wc -l <<< "$files") files, $lines lines"
 }
 
+# A first plan is only published when the workflow's own re-run of repro_<issue> failed (verify-repro.sh).
+# Returns 0 and appends the verification note, or returns 1 after rewriting comment.md as an unverified,
+# unapprovable report.
+verify_repro() {
+  local status reason command total failed message
+  if [[ -s "$REPRO" ]]; then
+    status=$(jq -r .status "$REPRO") reason=$(jq -r .reason "$REPRO") command=$(jq -r .command "$REPRO")
+    total=$(jq -r .total "$REPRO") failed=$(jq -r .failed "$REPRO") message=$(jq -r .message "$REPRO")
+  else
+    status=not-run reason="The verification step produced no result"
+  fi
+  if [[ "$status" == reproduced ]]; then
+    {
+      printf '\n\n> [!NOTE]\n> **Reproduction verified by the workflow:** `%s` → %s of %s test(s) failed.\n' "$command" "$failed" "$total"
+      [[ -n "$message" ]] && printf '>\n> ````text\n%s\n> ````\n' "$(sed 's/^/> /' <<< "$message")"
+    } >> comment.md
+    return 0
+  fi
+  local original
+  original=$(sed -E 's/^(#+) *Plan v([0-9]+)/\1 Proposed plan (unverified) v\2/' comment.md)
+  {
+    echo "## Investigation (unverified)"
+    echo
+    printf 'The agent reported a reproduction, but the workflow could not confirm it: **%s** (%s).' "$reason" "${command:-no command}"
+    echo " This issue is not treated as a confirmed bug and the plan below cannot be approved."
+    echo "A maintainer can comment with more details or guidance for another attempt."
+    echo
+    echo "<details><summary>Agent report</summary>"
+    echo
+    echo "$original"
+    echo
+    echo "</details>"
+  } > comment.md
+  return 1
+}
+
 dispatch_ci() {
   gh workflow run agent-pr-ci.yml --repo "$REPO" --ref "$1" -f pr="$2"
 }
@@ -104,7 +141,11 @@ case "$MODE" in
     [[ -s comment.md ]] || die "Empty comment"
     if [[ "$outcome" == plan-ready ]]; then
       grep -q '^## Plan v1' comment.md || die "plan-ready output has no '## Plan v1' section"
-      printf '\n<!-- bug-fixer:plan v=1 -->' >> comment.md
+      if verify_repro; then
+        printf '\n<!-- bug-fixer:plan v=1 -->' >> comment.md
+      else
+        outcome=needs-info
+      fi
     elif grep -q '^## Plan v' comment.md; then
       die "needs-info output must not contain a plan"
     fi
@@ -126,7 +167,11 @@ case "$MODE" in
     if [[ -n "$new" ]]; then
       (( new == current + 1 )) || die "new_plan_version $new does not follow the latest plan v$current"
       grep -q "^## Plan v$new" comment.md || die "Revised plan has no '## Plan v$new' section"
-      printf '\n<!-- bug-fixer:plan v=%s -->' "$new" >> comment.md
+      if (( new > 1 )) || verify_repro; then
+        printf '\n<!-- bug-fixer:plan v=%s -->' "$new" >> comment.md
+      else
+        outcome=needs-info
+      fi
     else
       ! grep -q '^## Plan v' comment.md || die "Comment contains a plan but new_plan_version is not set"
       [[ "$outcome" != plan-ready || "$current" -gt 0 ]] || die "plan-ready without any plan"
