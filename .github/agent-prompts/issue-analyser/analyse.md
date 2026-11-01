@@ -2,7 +2,15 @@
 
 A maintainer asked you to analyse the issue in `agent-context/thread.json`. First decide what kind of issue it is, then handle it accordingly.
 
-## Step 0: classify
+## Step 0: look for duplicates
+
+Before anything else, check whether the issue is already reported. `agent-context/issues.json` lists this repository's recent issues (open and closed; title, state, labels, the start of the body). Also search upstream with `gh api "search/issues?q=repo:ballerina-platform/ballerina-library+label:module/http+<keywords>"` (two or three keyword sets that describe the symptom, not the reporter's wording). Open the likely candidates with `gh issue view`.
+
+- Same problem with the same cause, or the same request, in an existing issue: suggest closing as a `duplicate` (see "If it should be closed") without reproducing it. Keep the older issue unless this one is clearly better described; then say so and still name the older one in `duplicate_of`. If the earlier issue has a fix PR or plan, mention it.
+- An earlier issue was fixed and closed, and this one reports the same behaviour again: this is a possible regression, not a duplicate. Handle it as a bug and link the earlier issue.
+- Related but different (same area, different cause or request): continue, and link it in your comment.
+
+## Step 1: classify
 
 Decide `classification`:
 

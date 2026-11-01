@@ -38,6 +38,11 @@ issue_thread() {
 case "$PHASE" in
   analyse|discuss)
     issue_thread "$NUMBER" > "$OUT/thread.json"
+    # Existing issues for the duplicate check: the 300 most recently updated, open and closed, without PRs.
+    gh api "repos/$REPO/issues?state=all&sort=updated&direction=desc&per_page=100" --paginate --jq '.[]' 2> /dev/null \
+      | jq -s --argjson n "$NUMBER" '[.[] | select(.pull_request | not) | select(.number != $n)][:300]
+          | map({number, title, state, state_reason, labels: [.labels[].name], created_at,
+                 body: ((.body // "") | .[0:600])})' > "$OUT/issues.json"
     ;;
 
   implement)
