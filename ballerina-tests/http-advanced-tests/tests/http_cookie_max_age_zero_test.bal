@@ -27,6 +27,18 @@ service /maxAgeZero on new http:Listener(cookieMaxAgeZeroTestPort) {
         return {headers: {"Set-Cookie": "session=; Max-Age=0; Path=/"}};
     }
 
+    resource function get logoutNegativeMaxAge() returns http:Ok {
+        return {headers: {"Set-Cookie": "session=; Max-Age=-1; Path=/"}};
+    }
+
+    resource function get logoutPastExpires() returns http:Ok {
+        return {headers: {"Set-Cookie": "session=; Expires=Thu, 01 Jan 1998 00:00:00 GMT; Path=/"}};
+    }
+
+    resource function get logoutMaxAgeZeroFutureExpires() returns http:Ok {
+        return {headers: {"Set-Cookie": "session=; Expires=Fri, 01 Jan 2100 00:00:00 GMT; Max-Age=0; Path=/"}};
+    }
+
     resource function get me(http:Request req) returns string {
         string|http:HeaderNotFoundError cookieHeader = req.getHeader("Cookie");
         return cookieHeader is string ? cookieHeader : "<none>";
@@ -50,6 +62,42 @@ function testCookieDeletedWithMaxAgeZeroIsRemovedFromStore() returns error? {
     }
     test:assertEquals(cookieStore.getCookiesByName("session").length(), 0,
         msg = "Cookie deleted with Max-Age=0 should be removed from the store");
+
+    string afterLogout = check clientEp->get("/maxAgeZero/me");
+    test:assertEquals(afterLogout, "<none>", msg = "Deleted cookie should not be sent");
+}
+
+@test:Config {groups: ["repro_27"]}
+function testCookieDeletedWithNegativeMaxAgeIsRemovedFromStore() returns error? {
+    check assertCookieDeletedBy("/maxAgeZero/logoutNegativeMaxAge");
+}
+
+@test:Config {groups: ["repro_27"]}
+function testCookieDeletedWithPastExpiresIsRemovedFromStore() returns error? {
+    check assertCookieDeletedBy("/maxAgeZero/logoutPastExpires");
+}
+
+@test:Config {groups: ["repro_27"]}
+function testCookieDeletedWithMaxAgeZeroAndFutureExpiresIsRemovedFromStore() returns error? {
+    check assertCookieDeletedBy("/maxAgeZero/logoutMaxAgeZeroFutureExpires");
+}
+
+function assertCookieDeletedBy(string logoutPath) returns error? {
+    http:Client clientEp = check new (string `http://localhost:${cookieMaxAgeZeroTestPort}`,
+        cookieConfig = {enabled: true});
+
+    http:Response _ = check clientEp->get("/maxAgeZero/login");
+    string beforeLogout = check clientEp->get("/maxAgeZero/me");
+    test:assertEquals(beforeLogout, "session=abc123", msg = "Cookie should be sent after login");
+
+    http:Response _ = check clientEp->get(logoutPath);
+
+    http:CookieStore? cookieStore = clientEp.getCookieStore();
+    if cookieStore !is http:CookieStore {
+        test:assertFail("Failed to get cookie store");
+    }
+    test:assertEquals(cookieStore.getCookiesByName("session").length(), 0,
+        msg = "Expired cookie should be removed from the store");
 
     string afterLogout = check clientEp->get("/maxAgeZero/me");
     test:assertEquals(afterLogout, "<none>", msg = "Deleted cookie should not be sent");

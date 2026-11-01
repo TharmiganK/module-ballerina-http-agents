@@ -18,6 +18,8 @@ import ballerina/lang.'int as ints;
 import ballerina/log;
 import ballerina/time;
 
+const EARLIEST_COOKIE_EXPIRY_TIME = "Thu, 01 Jan 1970 00:00:00 GMT";
+
 // Returns the cookie object from the string value of the "Set-Cookie" header.
 isolated function parseSetCookieHeader(string cookieStringValue) returns Cookie {
     string cookieValue = cookieStringValue;
@@ -26,6 +28,7 @@ isolated function parseSetCookieHeader(string cookieStringValue) returns Cookie 
     string cookieName = nameValuePair[0];
     string cookieVal = nameValuePair[1];
     CookieOptions options = {};
+    boolean expireImmediately = false;
     foreach var item in result {
         nameValuePair = re`=`.split(item);
         if nameValuePair[0].equalsIgnoreCaseAscii(DOMAIN_ATTRIBUTE) {
@@ -38,6 +41,8 @@ isolated function parseSetCookieHeader(string cookieStringValue) returns Cookie 
             int|error age = ints:fromString(nameValuePair[1]);
             if age is int {
                 options.maxAge = age;
+                // A non-positive Max-Age expires the cookie immediately [RFC-6265](https://tools.ietf.org/html/rfc6265#section-5.2.2).
+                expireImmediately = age <= 0;
             }
         }
         if nameValuePair[0].equalsIgnoreCaseAscii(EXPIRES_ATTRIBUTE) {
@@ -49,6 +54,10 @@ isolated function parseSetCookieHeader(string cookieStringValue) returns Cookie 
         if nameValuePair[0].equalsIgnoreCaseAscii(HTTP_ONLY_ATTRIBUTE) {
             options.httpOnly = true;
         }
+    }
+    if expireImmediately {
+        // Max-Age takes precedence over Expires [RFC-6265](https://tools.ietf.org/html/rfc6265#section-5.3).
+        options.expires = EARLIEST_COOKIE_EXPIRY_TIME;
     }
     Cookie cookie = new (cookieName, cookieVal, options);
     return cookie;
