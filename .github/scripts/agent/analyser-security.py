@@ -7,8 +7,9 @@ Channels (SECURITY_CHANNEL):
 - issue: an issue labelled Area/Security, refused unless the repository is private (used while draft advisories are
   unavailable, which is the case for private repositories).
 
-Env: REPO, RUN_URL, GH_TOKEN, SECURITY_CHANNEL, SECURITY_ADVISORY_TOKEN, DRY_RUN.
-Reads agent-security/security.json and agent-security/meta.json; writes the delivered count to the step output.
+Env: REPO, RUN_URL, GH_TOKEN, SECURITY_CHANNEL, SECURITY_ADVISORY_TOKEN, DRY_RUN, MAX_SECURITY.
+Reads <SECURITY_DIR>/*/{security.json,meta.json} (one decrypted directory per unit) and delivers at most MAX_SECURITY
+(default 3) findings per run, most severe first; writes the found and delivered counts to the step output.
 """
 import json
 import os
@@ -19,7 +20,9 @@ from pathlib import Path
 REPO, RUN_URL = os.environ["REPO"], os.environ["RUN_URL"]
 CHANNEL = os.environ.get("SECURITY_CHANNEL", "")
 DRY_RUN = os.environ.get("DRY_RUN", "false") == "true"
-IN = Path("agent-security")
+ROOT = Path(os.environ.get("SECURITY_DIR", "security"))
+MAX_SECURITY = int(os.environ.get("MAX_SECURITY") or 3)
+SEVERITY = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 FP_MARKER = re.compile(r"<!--\s*analyser:sec=([a-z0-9-]+/[a-z0-9-]+)\s*-->")
 
 
@@ -55,9 +58,17 @@ def body_for(finding, meta, fingerprint):
     ])
 
 
+def load():
+    findings = []
+    for unit_dir in sorted(p for p in ROOT.iterdir() if p.is_dir()) if ROOT.exists() else []:
+        if (unit_dir / "security.json").exists() and (unit_dir / "meta.json").exists():
+            meta = json.loads((unit_dir / "meta.json").read_text())
+            findings += [(meta, f) for f in json.loads((unit_dir / "security.json").read_text())]
+    return sorted(findings, key=lambda e: SEVERITY.get(e[1].get("severity"), 4))
+
+
 def main():
-    findings = json.loads((IN / "security.json").read_text()) if (IN / "security.json").exists() else []
-    meta = json.loads((IN / "meta.json").read_text())
+    findings = load()
     delivered = 0
     if findings and not DRY_RUN:
         if CHANNEL == "issue":
@@ -76,7 +87,11 @@ def main():
         else:
             raise SystemExit(f"::error::Unknown SECURITY_CHANNEL '{CHANNEL}' (expected issue or advisory)")
 
-        for finding in findings:
+        for meta, finding in findings:
+            if delivered >= MAX_SECURITY:
+                print(f"::warning::{len(findings) - delivered} security finding(s) over the cap of {MAX_SECURITY} "
+                      "were not delivered; they are in the run's encrypted artifacts")
+                break
             fingerprint = f"{meta['unit']}/{slug(finding.get('key', ''))}"
             if fingerprint in known:
                 continue

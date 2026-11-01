@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       scope:
-        description: Scope unit id from .github/agent-prompts/analyser/scopes.json (empty = automatic selection)
+        description: Comma-separated scope unit ids from .github/agent-prompts/analyser/scopes.json (empty = automatic selection)
         required: false
         default: ""
       dry_run:
@@ -32,8 +32,7 @@ jobs:
       contents: read
       issues: read
     outputs:
-      unit: ${{ steps.plan.outputs.unit }}
-      reason: ${{ steps.plan.outputs.reason }}
+      units: ${{ steps.plan.outputs.units }}
       sha: ${{ steps.info.outputs.sha }}
       dry_run: ${{ steps.info.outputs.dry_run }}
       private: ${{ steps.info.outputs.private }}
@@ -49,6 +48,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           SCOPE_INPUT: ${{ inputs.scope }}
+          UNITS_PER_RUN: ${{ vars.ANALYSER_UNITS_PER_RUN }}
           UPSTREAM_ISSUE_REPOS: ${{ vars.UPSTREAM_ISSUE_REPOS }}
         run: python3 .github/scripts/agent/analyser-plan.py
       - id: info
@@ -66,10 +66,16 @@ jobs:
           path: agent-context/
           retention-days: 14
 
+  # One job per scope unit, in parallel. A failing unit does not stop the others.
   agent:
     needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        unit: ${{ fromJSON(needs.plan.outputs.units) }}
     permissions:
       contents: read
       issues: read
@@ -77,7 +83,7 @@ jobs:
       packageUser: ${{ secrets.PACKAGE_USER }}
       packagePAT: ${{ secrets.PACKAGE_PAT }}
       REPO: ${{ github.repository }}
-      UNIT: ${{ needs.plan.outputs.unit }}
+      UNIT: ${{ matrix.unit }}
       GROUP_PREFIX: analyser_${{ github.run_number }}_
     steps:
       - uses: actions/checkout@v7
@@ -91,7 +97,7 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: analyser-context
-          path: agent-context
+          path: analyser-context
 
       - name: Prepare prompt
         id: prep
@@ -102,7 +108,10 @@ jobs:
           UPSTREAM_CODE_REPO: ${{ vars.UPSTREAM_CODE_REPO }}
         run: |
           set -euo pipefail
-          mkdir -p agent-output agent-security
+          mkdir -p agent-context agent-output agent-security
+          cp analyser-context/known-issues.json agent-context/
+          cp "analyser-context/$UNIT/scope.json" agent-context/scope.json
+          cp agent-context/scope.json agent-output/scope.json
           jq -n --arg unit "$UNIT" --arg sha "$SHA" --arg run "$GITHUB_RUN_NUMBER" --arg dry "$DRY_RUN" \
             '{unit: $unit, sha: $sha, run_number: $run, dry_run: ($dry == "true")}' > agent-output/meta.json
           cp agent-output/meta.json agent-security/meta.json
@@ -155,7 +164,6 @@ jobs:
             echo '[]' > agent-security/security.json
           fi
           rm agent-security/raw.json
-          echo "Security findings: $(jq length agent-security/security.json)"
           if [[ -n "$EXECUTION_FILE" && -f "$EXECUTION_FILE" ]]; then
             jq '[.[] | select(.type == "result")] | last | {num_turns, duration_ms, total_cost_usd, usage}' \
               "$EXECUTION_FILE" > agent-output/usage.json || true
@@ -164,14 +172,6 @@ jobs:
       - name: Verify reproductions
         if: steps.claude.outcome == 'success'
         run: python3 .github/scripts/agent/verify-findings.py
-
-      - uses: actions/upload-artifact@v7
-        if: always() && steps.claude.outcome != 'skipped'
-        with:
-          name: analyser-output
-          path: agent-output/
-          retention-days: 14
-          overwrite: true
 
       # Artifacts of public repositories are public: findings are encrypted to a public key whose private half only
       # publish-security holds (plaintext is allowed only in a private repository without a key).
@@ -182,16 +182,28 @@ jobs:
           REPO_PRIVATE: ${{ needs.plan.outputs.private }}
         run: .github/scripts/agent/security-transfer.sh encrypt agent-security
 
+      - name: Mark unit completed
+        run: touch agent-output/completed
+
+      - uses: actions/upload-artifact@v7
+        if: always() && steps.claude.outcome != 'skipped'
+        with:
+          name: analyser-output-${{ matrix.unit }}
+          path: agent-output/
+          retention-days: 14
+          overwrite: true
+
       - uses: actions/upload-artifact@v7
         if: steps.claude.outcome == 'success'
         with:
-          name: analyser-security
+          name: analyser-security-${{ matrix.unit }}
           path: agent-security/
           retention-days: 3
           overwrite: true
 
   publish-issues:
     needs: [plan, agent]
+    if: always() && needs.plan.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -201,29 +213,30 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       DRY_RUN: ${{ needs.plan.outputs.dry_run }}
+      MAX_ISSUES: ${{ vars.ANALYSER_MAX_ISSUES }}
     steps:
       - uses: actions/checkout@v7
         with:
           sparse-checkout: .github/scripts
           persist-credentials: false
       - uses: actions/download-artifact@v8
+        continue-on-error: true
         with:
-          name: analyser-output
-          path: agent-output
+          pattern: analyser-output-*
+          path: outputs
       - run: python3 .github/scripts/agent/analyser-publish.py
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: analyser-publish
-          path: |
-            agent-output/publish-report.json
-            agent-output/dry-run-*.md
+          path: publish/
           retention-days: 14
           if-no-files-found: ignore
           overwrite: true
 
   publish-security:
     needs: [plan, agent]
+    if: always() && needs.plan.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -244,13 +257,16 @@ jobs:
           sparse-checkout: .github/scripts
           persist-credentials: false
       - uses: actions/download-artifact@v8
+        continue-on-error: true
         with:
-          name: analyser-security
-          path: agent-security
+          pattern: analyser-security-*
+          path: security
       - name: Decrypt security findings
         env:
           SECURITY_TRANSFER_PRIVATE_KEY: ${{ secrets.SECURITY_TRANSFER_PRIVATE_KEY }}
-        run: .github/scripts/agent/security-transfer.sh decrypt agent-security
+        run: |
+          shopt -s nullglob
+          for dir in security/*/; do .github/scripts/agent/security-transfer.sh decrypt "$dir"; done
       - id: deliver
         run: python3 .github/scripts/agent/analyser-security.py
 
@@ -269,20 +285,18 @@ jobs:
       - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
-          name: analyser-output
-          path: agent-output
+          pattern: analyser-output-*
+          path: outputs
       - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: analyser-publish
-          path: agent-output
+          path: publish
       - name: Update state and report
         env:
-          UNIT: ${{ needs.plan.outputs.unit }}
+          UNITS: ${{ needs.plan.outputs.units }}
           SHA: ${{ needs.plan.outputs.sha }}
-          SELECTION_REASON: ${{ needs.plan.outputs.reason }}
           RUN_NUMBER: ${{ github.run_number }}
-          AGENT_RESULT: ${{ needs.agent.result }}
           DRY_RUN: ${{ needs.plan.outputs.dry_run }}
           SEC_FOUND: ${{ needs.publish-security.outputs.found }}
           SEC_DELIVERED: ${{ needs.publish-security.outputs.delivered }}
@@ -297,5 +311,5 @@ jobs:
           fi
           python3 .github/scripts/agent/analyser-state.py state
           git -C state add -A
-          git -C state commit -q -m "Weekly analyser: $UNIT (run $RUN_NUMBER)"
+          git -C state commit -q -m "Weekly analyser run $RUN_NUMBER: $(jq -r 'join(", ")' <<< "$UNITS")"
           git -C state push -q origin agent-state

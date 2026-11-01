@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Writes the weekly analyser's run report and updates the coverage state in a checkout of the agent-state branch.
-The unit is only marked as analysed when the agent job succeeded and this was not a dry run. Security findings appear
+A unit is only marked as analysed when its agent job completed and this was not a dry run. Security findings appear
 only as counts.
 
 Usage: analyser-state.py <state-dir>
-Env: UNIT, SHA, RUN_URL, RUN_NUMBER, AGENT_RESULT, DRY_RUN, SEC_FOUND, SEC_DELIVERED, SELECTION_REASON.
-Reads agent-output/{result.json,publish-report.json,usage.json} when present.
+Env: UNITS (JSON array of planned units), SHA, RUN_URL, RUN_NUMBER, DRY_RUN, SEC_FOUND, SEC_DELIVERED, OUTPUTS_DIR,
+REPORT_DIR. Reads <OUTPUTS_DIR>/<artifact>/{meta.json,scope.json,result.json,usage.json,completed} per unit and
+<REPORT_DIR>/publish-report.json.
 """
 import datetime
 import json
@@ -14,71 +15,93 @@ import sys
 from pathlib import Path
 
 STATE_DIR = Path(sys.argv[1]) / "analyser"
-OUT = Path("agent-output")
+OUTPUTS = Path(os.environ.get("OUTPUTS_DIR", "outputs"))
+REPORT_DIR = Path(os.environ.get("REPORT_DIR", "publish"))
 env = os.environ
 
 
-def load(name, default):
-    path = OUT / name
+def load(path, default):
     try:
-        return json.loads(path.read_text()) if path.exists() and path.read_text().strip() else default
+        text = path.read_text() if path.exists() else ""
+        return json.loads(text) if text.strip() else default
     except json.JSONDecodeError:
         return default
+
+
+def unit_outputs():
+    by_unit = {}
+    for unit_dir in sorted(p for p in OUTPUTS.iterdir() if p.is_dir()) if OUTPUTS.exists() else []:
+        meta = load(unit_dir / "meta.json", None)
+        if meta:
+            by_unit[meta["unit"]] = unit_dir
+    return by_unit
+
+
+def coverage_text(result):
+    coverage = result.get("coverage") or "_No coverage summary (the agent did not finish)._"
+    if "\n" not in coverage and "\\n" in coverage:
+        # The agent sometimes double-escapes newlines in the structured output.
+        coverage = coverage.replace("\\n", "\n")
+    return coverage
 
 
 def main():
     now = datetime.datetime.now(datetime.timezone.utc)
     dry_run = env.get("DRY_RUN") == "true"
-    succeeded = env.get("AGENT_RESULT") == "success"
-    result = load("result.json", {})
-    publish = load("publish-report.json", {"filed": [], "would_file": [], "dropped": []})
-    usage = load("usage.json", {})
+    planned = json.loads(env.get("UNITS") or "[]")
+    outputs = unit_outputs()
+    publish = load(REPORT_DIR / "publish-report.json", {"filed": [], "would_file": [], "dropped": []})
 
+    completed = [u for u in planned if u in outputs and (outputs[u] / "completed").exists()]
     lines = [
-        f"# Weekly analyser: `{env['UNIT']}`" + (" (dry run)" if dry_run else ""), "",
+        f"# Weekly analyser run {env['RUN_NUMBER']}" + (" (dry run)" if dry_run else ""), "",
         f"- **Date:** {now:%Y-%m-%d %H:%M} UTC",
         f"- **Commit:** `{env['SHA'][:12]}`",
-        f"- **Selected because:** {env.get('SELECTION_REASON', '')}",
-        f"- **Agent job:** {env.get('AGENT_RESULT', 'unknown')}",
+        f"- **Units:** {', '.join(f'`{u}`' for u in planned)} ({len(completed)} completed)",
         f"- **Run:** {env['RUN_URL']}",
+        "", "## Issues",
     ]
-    if usage:
-        lines.append(f"- **Claude:** {usage.get('num_turns', '?')} turns, "
-                     f"{round((usage.get('duration_ms') or 0) / 60000, 1)} min")
-    lines += ["", "## Issues"]
-    filed = publish.get("filed", []) + publish.get("would_file", [])
-    if filed:
-        for item in publish.get("filed", []):
-            lines.append(f"- Filed ({item['category']}): [{item['title']}]({item['url']})")
-        for item in publish.get("would_file", []):
-            lines.append(f"- Would file ({item['category']}): {item['title']}")
-    else:
+    for item in publish.get("filed", []):
+        lines.append(f"- Filed ({item['unit']}, {item['category']}): [{item['title']}]({item['url']})")
+    for item in publish.get("would_file", []):
+        lines.append(f"- Would file ({item['unit']}, {item['category']}): {item['title']}")
+    if not publish.get("filed") and not publish.get("would_file"):
         lines.append("- None")
     if publish.get("dropped"):
         lines += ["", "## Dropped findings"]
-        lines += [f"- {d['title']} — {d['reason']}" for d in publish["dropped"]]
-    lines += ["", "## Security", f"- {env.get('SEC_FOUND') or 0} found, {env.get('SEC_DELIVERED') or 0} delivered privately"]
-    coverage = result.get("coverage") or "_No coverage summary (the agent did not finish)._"
-    if "\n" not in coverage and "\\n" in coverage:
-        # The agent sometimes double-escapes newlines in the structured output.
-        coverage = coverage.replace("\\n", "\n")
-    lines += ["", "## Coverage", "", coverage]
+        lines += [f"- ({d.get('unit', '?')}) {d['title']} — {d['reason']}" for d in publish["dropped"]]
+    lines += ["", "## Security",
+              f"- {env.get('SEC_FOUND') or 0} found, {env.get('SEC_DELIVERED') or 0} delivered privately"]
+
+    for unit in planned:
+        unit_dir = outputs.get(unit)
+        scope = load(unit_dir / "scope.json", {}) if unit_dir else {}
+        result = load(unit_dir / "result.json", {}) if unit_dir else {}
+        usage = load(unit_dir / "usage.json", {}) if unit_dir else {}
+        status = "completed" if unit in completed else ("failed" if unit_dir else "no output")
+        lines += ["", f"## Unit `{unit}`", "",
+                  f"- **Status:** {status}",
+                  f"- **Selected because:** {scope.get('selection_reason', 'unknown')}"]
+        if usage:
+            lines.append(f"- **Claude:** {usage.get('num_turns', '?')} turns, "
+                         f"{round((usage.get('duration_ms') or 0) / 60000, 1)} min")
+        lines += ["", "### Coverage", "", coverage_text(result)]
     report = "\n".join(lines) + "\n"
 
     week = now.isocalendar()
-    report_path = STATE_DIR / "reports" / f"{week.year}-W{week.week:02d}-{env['UNIT']}-run{env['RUN_NUMBER']}.md"
+    report_path = STATE_DIR / "reports" / f"{week.year}-W{week.week:02d}-run{env['RUN_NUMBER']}.md"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(report)
 
     state_file = STATE_DIR / "state.json"
     state = json.loads(state_file.read_text()) if state_file.exists() else {"units": {}, "runs": []}
-    if succeeded and not dry_run:
-        state["units"][env["UNIT"]] = {"last_analysed": now.isoformat(), "sha": env["SHA"], "run_url": env["RUN_URL"]}
+    if not dry_run:
+        for unit in completed:
+            state["units"][unit] = {"last_analysed": now.isoformat(), "sha": env["SHA"], "run_url": env["RUN_URL"]}
     state["runs"] = (state.get("runs", []) + [{
-        "date": now.isoformat(), "unit": env["UNIT"], "sha": env["SHA"], "dry_run": dry_run,
-        "agent_result": env.get("AGENT_RESULT"), "filed": len(publish.get("filed", [])),
-        "dropped": len(publish.get("dropped", [])), "report": str(report_path.relative_to(STATE_DIR)),
-        "run_url": env["RUN_URL"]}])[-100:]
+        "date": now.isoformat(), "units": planned, "completed": completed, "sha": env["SHA"], "dry_run": dry_run,
+        "filed": len(publish.get("filed", [])), "dropped": len(publish.get("dropped", [])),
+        "report": str(report_path.relative_to(STATE_DIR)), "run_url": env["RUN_URL"]}])[-100:]
     state_file.write_text(json.dumps(state, indent=2) + "\n")
 
     if env.get("GITHUB_STEP_SUMMARY"):

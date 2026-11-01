@@ -61,18 +61,20 @@ The module is too large for one run, so it is divided into scope units in `.gith
 | `compiler-plugin` | 2.2–2.3 (compile-time rules), 11 | — | `compiler-plugin/` | `compiler-plugin-tests` |
 | `logging-config` | trace and access log sections | `http_log_manager.bal` | `api/logging/` | `http-misc-tests` |
 
-The exact paths are maintained in `scopes.json`; this table is the initial cut. With 16 units and one unit per week, a full cycle takes about four months.
+The exact paths are maintained in `scopes.json`; this table is the initial cut. With 16 units and 4 units per weekly run, a full cycle takes four weeks.
 
 ### Selection
 
-The plan job picks one unit per run, unless `scope` is given:
+The plan job picks `ANALYSER_UNITS_PER_RUN` units (repository variable, default 4), unless `scope` lists units (comma-separated):
 
 1. Units never analysed come first, in table order.
-2. Otherwise, the unit with the highest score `weeks since last analysis + 4 × (files in the unit changed on master since its last analysis > 0)`, so recently changed code is re-analysed sooner. Ties go to the least recently analysed unit.
+2. Then the units with the highest score `weeks since last analysis + 4 × (files in the unit changed on master since its last analysis > 0)`, so recently changed code is re-analysed sooner.
+
+The units are analysed in parallel by a matrix job (one runner per unit, `max-parallel: 4`, `fail-fast: false`), so one failing unit does not stop the others. Running units in parallel is cheap once the repository is public (standard runners are free) and keeps a full cycle at about four weeks; the limits are the shared Claude subscription quota and maintainers' triage capacity, which is why the issue cap is global per run rather than per unit.
 
 ### State
 
-State lives in `analyser/state.json` on an orphan branch `agent-state`, which nothing else uses. It records, per unit, the last analysis date, the `master` SHA analysed, and the run URL; and per run, a report file `analyser/reports/<yyyy>-W<ww>-<unit>.md`.
+State lives in `analyser/state.json` on an orphan branch `agent-state`, which nothing else uses. It records, per unit, the last analysis date, the `master` SHA analysed, and the run URL; and per run, a report file `analyser/reports/<yyyy>-W<ww>-run<n>.md` with a section per unit. A unit is only marked as analysed when its agent job completed.
 
 The Actions cache was rejected because entries unused for 7 days are evicted, which is exactly the weekly cadence; repository variables were rejected because writing them needs an admin-scoped token. A branch is durable, auditable (git history), and writable with `GITHUB_TOKEN`.
 
@@ -179,7 +181,7 @@ Allowed tools are the same as the QA agent's: read and edit tools, `run-tests.sh
 
 - **Verification.** `verify-findings.py`, shared with the QA agent, handles bug and question findings here and re-runs all reproduction groups, one `bal test` per package. Bugs and questions that do not reproduce are dropped and listed in the run report with the reason.
 - **Dedup.** Each filed issue carries a hidden fingerprint `<!-- analyser:fp=<unit>/<key> -->`. Before filing, the publish job reads the bodies of all `agent/generated` issues, open and closed, and skips findings whose fingerprint is already there; this catches findings the agent re-discovers under the same key. The agent's own semantic check against `known-issues.json` catches findings reported by people.
-- **Caps.** At most 4 public issues per run, in the agent's priority order, with verified bugs first; the rest are listed in the run report so they are not lost. At most 3 security findings per run.
+- **Caps.** At most `ANALYSER_MAX_ISSUES` (default 6) public issues per run across all units: verified bugs first, then unit and priority order; the rest are listed in the run report with their unit so they are not lost. At most 3 security findings per run across all units, most severe first. Only units whose agent job completed contribute findings.
 
 ### Issue format
 
@@ -236,9 +238,10 @@ Transfer between jobs: the agent job splits the structured output into the publi
 | `timeout-minutes` (agent job) | 120 |
 | `--max-turns` | 150 |
 | Model | `claude-opus-5-5` |
-| Public issues per run | ≤ 4 |
-| Security findings per run | ≤ 3 |
-| Estimated Actions minutes | 45–90 per week (build 4, analysis 20–50, verification 5–20) |
+| Units per run | `ANALYSER_UNITS_PER_RUN`, default 4, in parallel |
+| Public issues per run | ≤ `ANALYSER_MAX_ISSUES`, default 6, across all units |
+| Security findings per run | ≤ 3, across all units |
+| Measured per unit | 6–9 minutes and 28–53 turns in the first runs (`sse-streaming`); runner minutes are free on public repositories |
 | Estimated Claude usage | 60–150 turns, 3–8M mostly cached input tokens per run; the largest of the three agents |
 
 ## Alternatives considered

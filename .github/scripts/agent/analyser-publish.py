@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Files the weekly analyser's public findings as issues: drops unverified bugs and questions, skips findings whose
-fingerprint already exists in any agent-generated issue (open or closed), caps the number filed, and writes a publish
-report for the run report. With DRY_RUN=true nothing is filed.
+"""Files the weekly analyser's public findings as issues, across all scope units of the run: drops unverified bugs and
+questions, skips findings whose fingerprint already exists in any agent-generated issue (open or closed), files at most
+MAX_ISSUES (default 6) per run with bugs first, and writes a publish report. With DRY_RUN=true nothing is filed.
 
-Env: REPO, RUN_URL, GH_TOKEN, DRY_RUN. Reads agent-output/{result.json,repro.json,meta.json};
-writes agent-output/publish-report.json.
+Env: REPO, RUN_URL, GH_TOKEN, DRY_RUN, MAX_ISSUES. Reads <OUTPUTS_DIR>/*/{result.json,repro.json,meta.json,completed}
+(one directory per unit; units without the completed marker are skipped); writes publish-report.json and dry-run-*.md
+to REPORT_DIR.
 """
 import json
 import os
@@ -14,8 +15,9 @@ from pathlib import Path
 
 REPO, RUN_URL = os.environ["REPO"], os.environ["RUN_URL"]
 DRY_RUN = os.environ.get("DRY_RUN", "false") == "true"
-OUT = Path("agent-output")
-MAX_ISSUES = 4
+OUTPUTS = Path(os.environ.get("OUTPUTS_DIR", "outputs"))
+REPORT_DIR = Path(os.environ.get("REPORT_DIR", "publish"))
+MAX_ISSUES = int(os.environ.get("MAX_ISSUES") or 6)
 CATEGORY = {
     "bug": ("Bug", ["Type/Bug", "module/http", "agent/generated"]),
     "spec": ("Spec issue", ["Type/Improvement", "Area/Spec", "module/http", "agent/generated"]),
@@ -70,45 +72,57 @@ def issue_body(finding, category_label, verification, meta, fingerprint):
     return "\n".join(parts)
 
 
-def main():
-    result = json.loads((OUT / "result.json").read_text() or "null")
-    if not isinstance(result, dict) or not isinstance(result.get("findings"), list):
-        raise SystemExit("::error::Agent produced no valid structured output")
-    repro_file = OUT / "repro.json"
-    repro = json.loads(repro_file.read_text()) if repro_file.exists() else {}
-    meta = json.loads((OUT / "meta.json").read_text())
-    known = existing_fingerprints()
+def load_units():
+    """Returns [(meta, finding, repro)] for every finding of every completed unit, in unit then priority order."""
+    entries = []
+    for unit_dir in sorted(p for p in OUTPUTS.iterdir() if p.is_dir()) if OUTPUTS.exists() else []:
+        if not (unit_dir / "completed").exists():
+            print(f"Skipping {unit_dir.name}: the agent job did not complete")
+            continue
+        result = json.loads((unit_dir / "result.json").read_text() or "null")
+        if not isinstance(result, dict) or not isinstance(result.get("findings"), list):
+            print(f"::warning::Skipping {unit_dir.name}: no valid structured output")
+            continue
+        meta = json.loads((unit_dir / "meta.json").read_text())
+        repro = json.loads((unit_dir / "repro.json").read_text()) if (unit_dir / "repro.json").exists() else {}
+        entries += [(meta, finding, repro) for finding in result["findings"]]
+    return entries
 
+
+def main():
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    known = existing_fingerprints()
     report = {"filed": [], "would_file": [], "dropped": []}
-    # Bugs take the capped slots first; otherwise the agent's priority order is kept (sorted() is stable).
-    for finding in sorted(result["findings"], key=lambda f: f.get("category") != "bug"):
+    # Bugs take the capped slots first; otherwise unit and priority order are kept (sorted() is stable).
+    for meta, finding, repro in sorted(load_units(), key=lambda e: e[1].get("category") != "bug"):
         title = clean(finding.get("title", ""))
         category = finding.get("category")
+        unit = meta["unit"]
         if category not in CATEGORY or not title or not finding.get("body") or not finding.get("rule"):
-            report["dropped"].append({"title": title or "(untitled)", "reason": "invalid finding"})
+            report["dropped"].append({"unit": unit, "title": title or "(untitled)", "reason": "invalid finding"})
             continue
-        fingerprint = f"{meta['unit']}/{slug(finding.get('key', ''))}"
+        fingerprint = f"{unit}/{slug(finding.get('key', ''))}"
         verification = None
         if category in ("bug", "question"):
             verification = repro.get(finding.get("key"), {})
             if verification.get("status") != "reproduced":
                 reason = verification.get("reason", "no reproduction")
-                report["dropped"].append({"title": title, "category": category,
+                report["dropped"].append({"unit": unit, "title": title, "category": category,
                                           "reason": f"not reproduced by the workflow: {reason}"})
                 continue
         if fingerprint in known:
-            report["dropped"].append({"title": title, "category": category,
+            report["dropped"].append({"unit": unit, "title": title, "category": category,
                                       "reason": f"already filed (fingerprint {fingerprint})"})
             continue
         if len(report["filed"]) + len(report["would_file"]) >= MAX_ISSUES:
-            report["dropped"].append({"title": title, "category": category,
+            report["dropped"].append({"unit": unit, "title": title, "category": category,
                                       "reason": f"over the cap of {MAX_ISSUES} issues per run"})
             continue
         label, labels = CATEGORY[category]
         body = issue_body(finding, label, verification, meta, fingerprint)
-        entry = {"title": title, "category": category, "fingerprint": fingerprint}
+        entry = {"unit": unit, "title": title, "category": category, "fingerprint": fingerprint}
         if DRY_RUN:
-            (OUT / f"dry-run-{len(report['would_file']) + 1}.md").write_text(f"# {title}\n\n{body}")
+            (REPORT_DIR / f"dry-run-{len(report['would_file']) + 1}.md").write_text(f"# {title}\n\n{body}")
             report["would_file"].append(entry)
         else:
             url = gh("issue", "create", "--repo", REPO, "--title", title, "--body", body,
@@ -116,7 +130,7 @@ def main():
             report["filed"].append(dict(entry, url=url))
         known.add(fingerprint)
 
-    (OUT / "publish-report.json").write_text(json.dumps(report, indent=2))
+    (REPORT_DIR / "publish-report.json").write_text(json.dumps(report, indent=2))
     print(json.dumps(report, indent=2))
 
 

@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Selects the weekly analyser's scope unit and writes its context.
+"""Selects the weekly analyser's scope units and writes their context.
 
-Selection: a unit given in SCOPE_INPUT; otherwise units never analysed (in catalogue order); otherwise the highest
-score of weeks since the last analysis plus 4 if any of the unit's files changed on master since then.
+Selection: the units given in SCOPE_INPUT (comma-separated); otherwise UNITS_PER_RUN units (default 4): units never
+analysed first (in catalogue order), then by the highest score of weeks since the last analysis plus 4 if any of the
+unit's files changed on master since then.
 
-Env: REPO, GH_TOKEN, SCOPE_INPUT (optional). Expects the agent-state branch fetched as origin/agent-state if it exists.
-Writes agent-context/{scope.json,known-issues.json} and the step outputs unit, prev_sha, reason.
+Env: REPO, GH_TOKEN, SCOPE_INPUT, UNITS_PER_RUN, UPSTREAM_ISSUE_REPOS. Expects the agent-state branch fetched as
+origin/agent-state if it exists. Writes agent-context/known-issues.json and agent-context/<unit>/scope.json, and the
+step output units (JSON array of unit ids).
 """
 import datetime
 import json
@@ -34,27 +36,29 @@ def changed_files(unit, since_sha):
 
 
 def select(state):
-    requested = os.environ.get("SCOPE_INPUT", "").strip()
+    """Returns [(unit, reason)] for this run."""
+    requested = [r.strip() for r in os.environ.get("SCOPE_INPUT", "").split(",") if r.strip()]
     if requested:
-        matches = [u for u in SCOPES if u["id"] == requested]
-        if not matches:
-            raise SystemExit(f"::error::Unknown scope unit '{requested}'")
-        return matches[0], "requested"
+        by_id = {u["id"]: u for u in SCOPES}
+        unknown = [r for r in requested if r not in by_id]
+        if unknown:
+            raise SystemExit(f"::error::Unknown scope unit(s): {', '.join(unknown)}")
+        return [(by_id[r], "requested") for r in dict.fromkeys(requested)]
+    count = max(1, int(os.environ.get("UNITS_PER_RUN") or 4))
     analysed = state.get("units", {})
-    for unit in SCOPES:
-        if unit["id"] not in analysed:
-            return unit, "never analysed"
     now = datetime.datetime.now(datetime.timezone.utc)
-    best, best_score, best_reason = None, -1.0, ""
-    for unit in SCOPES:
-        entry = analysed[unit["id"]]
+    ranked = []
+    for order, unit in enumerate(SCOPES):
+        entry = analysed.get(unit["id"])
+        if entry is None:
+            ranked.append((float("inf"), -order, unit, "never analysed"))
+            continue
         weeks = (now - datetime.datetime.fromisoformat(entry["last_analysed"])).days / 7
         changed = bool(changed_files(unit, entry.get("sha")))
-        score = weeks + (4 if changed else 0)
-        if score > best_score:
-            reason = f"{weeks:.1f} weeks since last analysis" + (", files changed since" if changed else "")
-            best, best_score, best_reason = unit, score, reason
-    return best, best_reason
+        reason = f"{weeks:.1f} weeks since last analysis" + (", files changed since" if changed else "")
+        ranked.append((weeks + (4 if changed else 0), -order, unit, reason))
+    ranked.sort(key=lambda r: (r[0], r[1]), reverse=True)
+    return [(unit, reason) for _score, _order, unit, reason in ranked[:count]]
 
 
 def list_issues(repo, label):
@@ -84,17 +88,18 @@ def known_issues():
 
 def main():
     state = load_state()
-    unit, reason = select(state)
-    previous = state.get("units", {}).get(unit["id"], {})
-    prev_sha = previous.get("sha", "")
+    selected = select(state)
     OUT.mkdir(exist_ok=True)
-    scope = dict(unit, selection_reason=reason, previous_analysis=previous or None,
-                 changed_since_previous=changed_files(unit, prev_sha))
-    (OUT / "scope.json").write_text(json.dumps(scope, indent=2))
+    for unit, reason in selected:
+        previous = state.get("units", {}).get(unit["id"], {})
+        scope = dict(unit, selection_reason=reason, previous_analysis=previous or None,
+                     changed_since_previous=changed_files(unit, previous.get("sha", "")))
+        (OUT / unit["id"]).mkdir(exist_ok=True)
+        (OUT / unit["id"] / "scope.json").write_text(json.dumps(scope, indent=2))
+        print(f"Selected unit {unit['id']} ({reason})")
     (OUT / "known-issues.json").write_text(json.dumps(known_issues(), indent=2))
     with open(os.environ["GITHUB_OUTPUT"], "a") as out:
-        out.write(f"unit={unit['id']}\nprev_sha={prev_sha}\nreason={reason}\n")
-    print(f"Selected unit {unit['id']} ({reason})")
+        out.write(f"units={json.dumps([u['id'] for u, _ in selected])}\n")
 
 
 if __name__ == "__main__":
