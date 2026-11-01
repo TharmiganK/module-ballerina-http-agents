@@ -56,7 +56,7 @@ split_issue() {
     || die "#$NUMBER was split from another issue and cannot be split again"
   count=$(jq '.parts | length' "$RESULT")
   (( count >= 2 && count <= 5 )) || die "A split needs 2 to 5 parts, got $count"
-  field .comment | strip_markers > comment.md
+  field .comment | strip_markers | perl -0pe 's/\s+\z//' > comment.md
   [[ -s comment.md ]] || die "Empty comment"
   mapfile -t carry < <(jq -r '.labels[].name | select((startswith("Type/") or startswith("agent/")) | not)' parent.json)
   existing=$(gh api --paginate "repos/$REPO/issues/$NUMBER/sub_issues" --jq '.[].title' 2> /dev/null || true)

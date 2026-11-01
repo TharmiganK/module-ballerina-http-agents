@@ -99,7 +99,7 @@ Maintainer feedback on the validated agents led to these changes, each reflected
 | Bug fixer review rounds post all thread replies and the summary as one review; escaped `\n` in agent text is unescaped; find-similar comments name areas instead of scope unit ids and link the run report | PR #9 showed literal `\n` in a summary, one empty "reviewed" timeline entry per reply, and a vague report path | Implemented |
 | The repository is public; security findings are encrypted between jobs and delivered as draft security advisories | Free runner minutes and the same security channel as upstream | Implemented; advisory delivery not yet exercised |
 
-Two workflow-trigger problems surfaced while adding these and were fixed: GitHub runs `pull_request`-type workflows from the PR's test-merge commit, which can predate a new workflow (label triggers now use `pull_request_target`, which never checks out PR code), and workflow-level concurrency let unrelated events cancel the auto-fix wait (moved to job level).
+Two workflow-trigger problems surfaced while adding these and were fixed: GitHub runs `pull_request`-type workflows from the PR's test-merge commit, which can predate a new workflow (label triggers now use `pull_request_target`, which never checks out PR code), and workflow-level concurrency let unrelated events cancel the auto-fix wait (moved to job level). `pull_request_review` has no `_target` variant and also runs from the test-merge commit, which GitHub does not refresh when the base branch moves: on PR #9 a `/bug-fixer` review ran workflow code 11 commits old. Review events now only relay to a `workflow_dispatch` run (bug fixer: `pr` and `review_id`; auto-fix: `pr`), which always uses the default branch's workflow.
 
 ## Cost and time
 

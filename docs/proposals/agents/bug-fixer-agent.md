@@ -56,6 +56,8 @@ The following was verified against the action's docs and source, and drives the 
 - Events created with `GITHUB_TOKEN` do not trigger new workflow runs, except `workflow_dispatch` and `repository_dispatch`. A PR opened by `GITHUB_TOKEN` therefore does not trigger `pull_request` CI, but the publishing job can dispatch CI explicitly.
 - Comments posted with `GITHUB_TOKEN` are authored by `github-actions[bot]` and do not trigger `issue_comment` workflows, so the agent cannot trigger itself.
 
+`pull_request_review` and `pull_request_review_comment` workflows run from the PR's test-merge commit, which GitHub does not refresh when the base branch moves, so their workflow code can be stale. The gate therefore only relays a `/bug-fixer` review to a `workflow_dispatch` run (`pr`, `review_id`) that uses the default branch's workflow and re-checks the review author, command and PR; the auto-fix scheduler relays review events the same way.
+
 ## Design
 
 ### Core pattern: propose, then publish
