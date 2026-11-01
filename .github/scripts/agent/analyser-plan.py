@@ -66,8 +66,6 @@ def known_issues():
             capture_output=True, text=True, check=True)
         for issue in json.loads(listed.stdout):
             labels = [l["name"] for l in issue["labels"]]
-            if "security/private" in labels:
-                continue
             issues[issue["number"]] = {"number": issue["number"], "title": issue["title"], "state": issue["state"],
                                        "labels": labels, "body": (issue["body"] or "")[:500]}
     return sorted(issues.values(), key=lambda i: i["number"])

@@ -4,7 +4,8 @@
 Channels (SECURITY_CHANNEL):
 - advisory: a draft repository security advisory per finding (public repositories only; needs
   SECURITY_ADVISORY_TOKEN with repository security advisories write access).
-- issue: an issue labelled security/private, refused unless the repository is private.
+- issue: an issue labelled Area/Security, refused unless the repository is private (used while draft advisories are
+  unavailable, which is the case for private repositories).
 
 Env: REPO, RUN_URL, GH_TOKEN, SECURITY_CHANNEL, SECURITY_ADVISORY_TOKEN, DRY_RUN.
 Reads agent-security/security.json and agent-security/meta.json; writes the delivered count to the step output.
@@ -37,8 +38,14 @@ def slug(key):
     return re.sub(r"[^a-z0-9-]+", "-", key.lower()).strip("-")[:60] or "finding"
 
 
+ISSUE_NOTE = ("> [!IMPORTANT]\n> Potential security vulnerability, filed as an issue because draft security advisories are only "
+              "available in public repositories. Move it to a GitHub security advisory (Security tab → Advisories) "
+              "before this finding or this repository becomes public, and do not copy it to public trackers.")
+
+
 def body_for(finding, meta, fingerprint):
     return "\n".join([
+        *([ISSUE_NOTE, ""] if CHANNEL == "issue" else []),
         re.sub(r"<!--\s*analyser:[^>]*-->", "", finding["body"]).strip(), "",
         "---",
         f"Found by the weekly analyser in scope `{meta['unit']}` at `{meta['sha'][:12]}` ([workflow run]({RUN_URL})). "
@@ -55,7 +62,7 @@ def main():
         if CHANNEL == "issue":
             if json.loads(gh(["api", f"repos/{REPO}"]))["private"] is not True:
                 raise SystemExit("::error::SECURITY_CHANNEL=issue is only allowed in private repositories")
-            listed = gh(["issue", "list", "--repo", REPO, "--state", "all", "--label", "security/private",
+            listed = gh(["issue", "list", "--repo", REPO, "--state", "all", "--label", "Area/Security",
                          "--limit", "1000", "--json", "body"])
             known = {fp for i in json.loads(listed) for fp in FP_MARKER.findall(i["body"] or "")}
         elif CHANNEL == "advisory":
@@ -75,7 +82,7 @@ def main():
             body = body_for(finding, meta, fingerprint)
             if CHANNEL == "issue":
                 gh(["issue", "create", "--repo", REPO, "--title", f"[Security] {finding['title']}", "--body", body,
-                    "--label", "security/private", "--label", "agent/generated", "--label", "module/http"])
+                    "--label", "Area/Security", "--label", "agent/generated", "--label", "module/http"])
             else:
                 gh(["api", "-X", "POST", f"repos/{REPO}/security-advisories", "--input", "-"],
                    token=os.environ["SECURITY_ADVISORY_TOKEN"],
