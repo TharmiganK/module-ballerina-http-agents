@@ -1,5 +1,11 @@
 {
-  "units": {},
+  "units": {
+    "sse-streaming": {
+      "last_analysed": "2026-11-01T07:20:33.173371+00:00",
+      "sha": "e11e275522d667239d177ce79536db6f3da99b73",
+      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41283781283"
+    }
+  },
   "runs": [
     {
       "date": "2026-11-01T06:57:14.840279+00:00",
@@ -11,6 +17,17 @@
       "dropped": 0,
       "report": "reports/2026-W44-sse-streaming-run1.md",
       "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41282474923"
+    },
+    {
+      "date": "2026-11-01T07:20:33.173371+00:00",
+      "unit": "sse-streaming",
+      "sha": "e11e275522d667239d177ce79536db6f3da99b73",
+      "dry_run": false,
+      "agent_result": "success",
+      "filed": 4,
+      "dropped": 0,
+      "report": "reports/2026-W44-sse-streaming-run2.md",
+      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41283781283"
     }
   ]
 }
