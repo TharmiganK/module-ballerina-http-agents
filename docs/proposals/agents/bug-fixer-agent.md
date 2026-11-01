@@ -270,7 +270,7 @@ Passed through `claude_args: --allowedTools`.
 | investigate / discuss agent | `contents: read`, `issues: read` |
 | implement agent | `contents: read`, `issues: read` |
 | review agent | `contents: read`, `pull-requests: read`, `issues: read` |
-| investigate / discuss publish | `issues: write` |
+| investigate / discuss publish | `contents: read`, `issues: write` |
 | implement / review publish | `contents: write`, `issues: write`, `pull-requests: write`, `actions: write` |
 
 `actions: write` is only needed to dispatch CI. Checkout uses `persist-credentials: false` in agent jobs.
