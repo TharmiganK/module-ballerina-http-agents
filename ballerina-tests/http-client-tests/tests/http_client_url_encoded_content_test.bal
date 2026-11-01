@@ -117,3 +117,30 @@ isolated function testUrlContentWithJsonPayload() returns error? {
         test:assertEquals(response.message(), "unsupported content for application/x-www-form-urlencoded media type", msg = "Found unexpected output");
     }
 }
+
+service /formCharset on new http:Listener(formUrlEncodedCharsetBindingPort, httpVersion = http:HTTP_1_1) {
+    resource function get token() returns http:Response {
+        http:Response res = new;
+        res.setPayload("access_token=abc&expires_in=28800&scope=&token_type=bearer",
+            mime:APPLICATION_FORM_URLENCODED + "; charset=utf-8");
+        return res;
+    }
+}
+
+final http:Client formCharsetClient = check new (string `localhost:${formUrlEncodedCharsetBindingPort}/formCharset`);
+
+@test:Config {
+    groups: ["repro_4"]
+}
+function testFormUrlEncodedResponseWithCharsetBindToMapString() returns error? {
+    map<string> res = check formCharsetClient->/token;
+    test:assertEquals(res, {"access_token": "abc", "expires_in": "28800", "scope": "", "token_type": "bearer"});
+}
+
+@test:Config {
+    groups: ["repro_4"]
+}
+function testFormUrlEncodedResponseWithCharsetBindToNilableMapString() returns error? {
+    map<string>? res = check formCharsetClient->/token;
+    test:assertEquals(res, {"access_token": "abc", "expires_in": "28800", "scope": "", "token_type": "bearer"});
+}
