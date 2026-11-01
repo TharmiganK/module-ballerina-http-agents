@@ -267,6 +267,7 @@ Maintainers can opt a single agent PR into automatic review handling by adding `
 - After the wait it checks for actionable threads; chat-only comments open no threads and dispatch nothing. The bug fixer's gate checks again before starting, so a queued run that has nothing left to do does not build.
 - Each automatic round's summary carries a hidden `auto-round` marker. After `AUTOFIX_MAX_ROUNDS` (default 3) rounds, auto-fix pauses with a comment; `/bug-fixer` continues manually. This bounds cost and stops any loop between QA findings and fixes.
 - A human push to the PR branch during a round makes the publish step refuse to push, as for manual rounds.
+- GitHub runs `pull_request`, `pull_request_review` and `pull_request_review_comment` workflows from the PR's test-merge commit, not from the default branch. The label trigger therefore uses `pull_request_target` (base-branch workflow; PR code is never checked out). Review-event triggers depend on the merge commit containing the workflow, which holds for agent PRs created on the current `master` and after GitHub recomputes the merge commit; older PRs pick up feedback through the label, `issue_comment` and dispatch paths.
 
 ### Tool allowlists
 
