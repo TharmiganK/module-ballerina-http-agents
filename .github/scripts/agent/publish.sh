@@ -204,8 +204,13 @@ case "$MODE" in
     [[ -n "$title" ]] || die "Missing pr_title"
     base=$(jq -r '.base_sha' "$META")
     branch="agent/issue-$ISSUE"
-    if git ls-remote --exit-code --heads origin "$branch" > /dev/null; then
-      die "Branch $branch already exists; delete it to re-run the implementation"
+    # The workflow owns agent/issue-<n>. A branch without an open PR is a leftover from a failed or abandoned
+    # run and is replaced; one with an open PR is never touched here (the review phase updates it).
+    existing=$(git ls-remote --heads origin "$branch" | cut -f1)
+    if [[ -n "$existing" ]]; then
+      open_prs=$(gh pr list --repo "$REPO" --head "$branch" --state open --json number --jq length)
+      (( open_prs == 0 )) || die "An open PR already uses $branch"
+      echo "::warning::Replacing leftover branch $branch (was $existing) that has no open PR"
     fi
     git fetch --no-tags --depth=1 origin "$base"
     git checkout -q -b "$branch" "$base"
@@ -217,7 +222,11 @@ case "$MODE" in
       printf '\n<!-- ci-tests: %s -->' "$tests"
       footer
     } > pr-body.md
-    git push -q origin "$branch"
+    if [[ -n "$existing" ]]; then
+      git push -q --force-with-lease="refs/heads/$branch:$existing" origin "$branch"
+    else
+      git push -q origin "$branch"
+    fi
     pr_url=$(gh pr create --repo "$REPO" --base master --head "$branch" --title "$title" \
       --body-file pr-body.md --label agent/generated)
     pr_number="${pr_url##*/}"

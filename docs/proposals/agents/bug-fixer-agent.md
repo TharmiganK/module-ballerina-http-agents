@@ -222,7 +222,7 @@ A pre-step resolves the approved plan (see [Plan versioning](#plan-versioning)) 
 A post-step in the agent job writes `git format-patch master..HEAD` to an artifact. The publish job:
 
 1. Rejects the patch if it touches `.github/`, `.claude/`, `CLAUDE.md` or `docs/proposals/`, exceeds 25 files or 1500 changed lines, or does not add a test with group `repro_<issue>`.
-2. Applies it on `agent/issue-<issue>` from `master` and pushes. Fails if the branch already exists.
+2. Applies it on `agent/issue-<issue>` from `master` and pushes. The workflow owns these branches: if the branch already exists without an open PR (a leftover from a failed run, for example one that pushed but could not open the PR), it is replaced with `--force-with-lease` pinned to the SHA seen at the start of the publish step; if an open PR uses it, the job fails.
 3. Opens one PR with `Fixes #<issue>`, the agent's body (flow analysis, fix rationale, before/after test evidence), a `<!-- ci-tests: ... -->` marker from `ci_tests`, and label `agent/generated`.
 4. Dispatches `agent-pr-ci.yml` on the branch.
 5. Sets `agent/pr-open` on the issue. For `blocked`, posts the reason and sets `agent/plan-ready` back so the plan can be revised.
