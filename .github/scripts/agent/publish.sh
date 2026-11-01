@@ -35,7 +35,7 @@ remove_labels() {
 }
 
 # Agent text must not forge the markers the workflow relies on.
-strip_markers() { perl -0pe 's/<!--\s*(bug-fixer|ci-tests):.*?-->//gs'; }
+strip_markers() { perl -0pe 's/<!--\s*(bug-fixer|ci-tests):.*?-->//gs; s/^.*Generated with \[Claude Code\].*\n?//gm'; }
 
 footer() { printf '\n\n---\n<sub>Posted by the bug fixer agent · [workflow run](%s)</sub>\n' "$RUN_URL"; }
 

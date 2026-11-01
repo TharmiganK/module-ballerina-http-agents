@@ -46,7 +46,8 @@ ISSUE_NOTE = ("> [!IMPORTANT]\n> Potential security vulnerability, filed as an i
 def body_for(finding, meta, fingerprint):
     return "\n".join([
         *([ISSUE_NOTE, ""] if CHANNEL == "issue" else []),
-        re.sub(r"<!--\s*analyser:[^>]*-->", "", finding["body"]).strip(), "",
+        re.sub(r"^.*Generated with \[Claude Code\].*$\n?", "",
+               re.sub(r"<!--\s*analyser:[^>]*-->", "", finding["body"]), flags=re.MULTILINE).strip(), "",
         "---",
         f"Found by the weekly analyser in scope `{meta['unit']}` at `{meta['sha'][:12]}` ([workflow run]({RUN_URL})). "
         "This finding has not been reviewed by a human yet.", "",

@@ -32,8 +32,11 @@ def gh(*args, payload=None):
     return proc.stdout
 
 
+ATTRIBUTION = re.compile(r"^.*Generated with \[Claude Code\].*$\n?", re.MULTILINE)
+
+
 def clean(text):
-    return re.sub(r"<!--\s*analyser:[^>]*-->", "", text or "").strip()
+    return ATTRIBUTION.sub("", re.sub(r"<!--\s*analyser:[^>]*-->", "", text or "")).strip()
 
 
 def slug(key):

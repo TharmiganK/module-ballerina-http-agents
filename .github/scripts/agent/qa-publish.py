@@ -42,8 +42,11 @@ def fail(message):
     sys.exit(1)
 
 
+ATTRIBUTION = re.compile(r"^.*Generated with \[Claude Code\].*$\n?", re.MULTILINE)
+
+
 def clean(text):
-    return re.sub(r"<!--\s*qa:[^>]*-->", "", text or "").strip()
+    return ATTRIBUTION.sub("", re.sub(r"<!--\s*qa:[^>]*-->", "", text or "")).strip()
 
 
 def slug(key):
