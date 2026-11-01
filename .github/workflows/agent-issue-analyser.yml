@@ -1,7 +1,8 @@
 name: Agent - Issue analyser
 run-name: >-
   ${{ github.event_name == 'workflow_dispatch' && format('Analyse sub-issue #{0}', inputs.issue)
-  || github.event_name == 'issue_comment' && format('Discuss #{0}: {1}', github.event.issue.number, github.event.issue.title)
+  || github.event_name == 'issue_comment' && !github.event.issue.pull_request && startsWith(github.event.comment.body, '/agent') && format('Discuss #{0}: {1}', github.event.issue.number, github.event.issue.title)
+  || github.event_name == 'issue_comment' && format('Ignore comment on #{0}', github.event.issue.number)
   || github.event.label.name == 'agent/investigate' && format('Analyse #{0}: {1}', github.event.issue.number, github.event.issue.title)
   || format('Ignore label {0} on #{1}', github.event.label.name, github.event.issue.number) }}
 
