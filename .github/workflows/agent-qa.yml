@@ -65,6 +65,8 @@ jobs:
           [[ "$(jq -r .state <<< "$info")" == OPEN ]] || skip="PR is not open"
           if [[ "$manual" == false ]]; then
             [[ "$(jq -r .isDraft <<< "$info")" == false ]] || skip="PR is a draft"
+            # Fork PRs get no secrets on pull_request; a maintainer can run /qa instead.
+            [[ "$(jq -r .isCrossRepository <<< "$info")" == false ]] || skip="PR is from a fork; a maintainer can comment /qa"
             jq -e '[.labels[].name] | index("agent/qa-skip")' <<< "$info" > /dev/null && skip="PR has agent/qa-skip"
           fi
           # Fork PRs run their own build logic with secrets; require a maintainer to vouch for build changes.

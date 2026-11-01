@@ -168,18 +168,17 @@ jobs:
           retention-days: 14
           overwrite: true
 
-      # Artifacts of public repositories are public; until an encrypted transfer exists, security findings may only
-      # leave this job in a private repository.
-      - name: Guard security transfer
-        if: steps.claude.outcome == 'success' && needs.plan.outputs.private != 'true'
-        run: |
-          if [[ "$(jq length agent-security/security.json)" != 0 ]]; then
-            echo "::error::Security findings cannot be transferred privately from a public repository (not implemented)"
-            exit 1
-          fi
+      # Artifacts of public repositories are public: findings are encrypted to a public key whose private half only
+      # publish-security holds (plaintext is allowed only in a private repository without a key).
+      - name: Protect security findings
+        if: steps.claude.outcome == 'success'
+        env:
+          SECURITY_TRANSFER_PUBLIC_KEY: ${{ vars.SECURITY_TRANSFER_PUBLIC_KEY }}
+          REPO_PRIVATE: ${{ needs.plan.outputs.private }}
+        run: .github/scripts/agent/security-transfer.sh encrypt agent-security
 
       - uses: actions/upload-artifact@v7
-        if: steps.claude.outcome == 'success' && needs.plan.outputs.private == 'true'
+        if: steps.claude.outcome == 'success'
         with:
           name: analyser-security
           path: agent-security/
@@ -220,7 +219,6 @@ jobs:
 
   publish-security:
     needs: [plan, agent]
-    if: needs.plan.outputs.private == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -244,6 +242,10 @@ jobs:
         with:
           name: analyser-security
           path: agent-security
+      - name: Decrypt security findings
+        env:
+          SECURITY_TRANSFER_PRIVATE_KEY: ${{ secrets.SECURITY_TRANSFER_PRIVATE_KEY }}
+        run: .github/scripts/agent/security-transfer.sh decrypt agent-security
       - id: deliver
         run: python3 .github/scripts/agent/analyser-security.py
 

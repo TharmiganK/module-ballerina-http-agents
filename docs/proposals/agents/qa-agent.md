@@ -173,7 +173,7 @@ Same as the bug fixer's investigate phase: `Read`, `Glob`, `Grep`, `Edit`, `Writ
 
 The PoC repository has no forks. For upstream, the design keeps fork PRs safe by construction:
 
-- `pull_request` from forks gets no secrets, so the automatic trigger simply does nothing useful there; `pull_request_target` is not used.
+- `pull_request` from forks gets no secrets, so the gate skips fork PRs on the automatic trigger (and `agent-pr-ci.yml` skips them too); `pull_request_target` is not used.
 - `/qa` runs with secrets and executes the PR's code (Gradle build scripts and tests). It therefore requires write access, and the gate refuses to run if the PR changes build logic (`**/*.gradle`, `gradle/`, `gradlew*`, `.github/`, `build-config/`) unless a maintainer adds `agent/qa-trusted` after reviewing those changes. Claude configuration (`.claude/`, `CLAUDE.md`) is restored from the base branch by the action.
 - Upstream would also move `packagePAT` out of the agent's environment by pre-resolving dependencies in a separate step, so that the PR's code never sees it.
 
