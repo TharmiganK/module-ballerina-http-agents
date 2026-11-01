@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Deterministic publish step for the bug fixer agent: validates the agent's structured output and patch,
+# Deterministic publish step for the issue agents (issue analyser, bug fixer): validates the agent's structured output and patch,
 # enforces the caps, then writes to GitHub. The agent itself never holds a write token.
 #
-# Usage: publish.sh <investigate|discuss|implement|review|fail>
-# Env: REPO, NUMBER, RUN_URL, GH_TOKEN; agent-output/{result.json,meta.json,changes.patch} from the agent job.
+# Usage: publish.sh <analyse|discuss|implement|review|fail>
+# Env: REPO, AGENT (issue-analyser|bug-fixer), NUMBER, RUN_URL, GH_TOKEN; agent-output/{result.json,meta.json,changes.patch} from the agent job.
 # For fail: FAILED_PHASE.
 set -euo pipefail
 
@@ -41,7 +41,8 @@ strip_markers() {
   perl -0pe 's/\\n/\n/g unless /\n(?!\z)/; s/<!--\s*(bug-fixer|ci-tests):.*?-->//gs; s/^.*Generated with \[Claude Code\].*\n?//gm'
 }
 
-footer() { printf '\n\n---\n<sub>Posted by the bug fixer agent · [workflow run](%s)</sub>\n' "$RUN_URL"; }
+AGENT_NAME=$([[ "${AGENT:-}" == bug-fixer ]] && echo "bug fixer" || echo "issue analyser")
+footer() { printf '\n\n---\n<sub>Posted by the %s · [workflow run](%s)</sub>\n' "$AGENT_NAME" "$RUN_URL"; }
 
 post_issue_comment() {
   gh api "repos/$REPO/issues/$1/comments" -F body=@"$2" > /dev/null
@@ -97,7 +98,7 @@ split_issue() {
   add_labels agent/split
   # Labels added with GITHUB_TOKEN start no workflow, so each investigation is dispatched explicitly.
   for child in "${children[@]}"; do
-    gh workflow run agent-bug-fixer.yml --repo "$REPO" -f issue="$child" \
+    gh workflow run agent-issue-analyser.yml --repo "$REPO" -f issue="$child" \
       || echo "::warning::Could not start the investigation of #$child; add agent/investigate to it again"
   done
 }
@@ -193,7 +194,7 @@ dispatch_ci() {
 }
 
 case "$MODE" in
-  investigate)
+  analyse)
     require_result
     outcome=$(field .outcome)
     classification=$(field .classification)
@@ -272,7 +273,7 @@ case "$MODE" in
       field .blocked_reason | strip_markers > reason.md
       grep -q '^## ' reason.md || { echo "## Implementation blocked"; echo; } > comment.md
       cat reason.md >> comment.md
-      echo "The approved plan was not implemented. Comment \`/bug-fixer\` with guidance to revise the plan, then add \`agent/approved\` again." >> comment.md
+      echo "The approved plan was not implemented. Comment \`/agent\` with guidance to revise the plan, then add \`agent/approved\` again." >> comment.md
       footer >> comment.md
       post_issue_comment "$NUMBER" comment.md
       remove_labels agent/implementing agent/approved
@@ -404,17 +405,17 @@ case "$MODE" in
 
   fail)
     phase="${FAILED_PHASE:-unknown}"
-    printf 'The bug fixer agent failed during the **%s** phase. See the workflow run for details.' "$phase" > comment.md
+    printf 'The %s failed during the **%s** phase. See the workflow run for details.' "$AGENT_NAME" "$phase" > comment.md
     case "$phase" in
-      investigate) printf ' Add `agent/investigate` to retry.' >> comment.md ;;
-      implement)   printf ' Add `agent/approved` to retry the approved plan, or `agent/investigate` to start over.' >> comment.md ;;
-      discuss|review) printf ' Comment `/bug-fixer` to retry.' >> comment.md ;;
+      analyse)        printf ' Add `agent/investigate` to retry.' >> comment.md ;;
+      implement)      printf ' Add `agent/approved` to retry the approved plan, or `agent/investigate` to start over.' >> comment.md ;;
+      discuss|review) printf ' Comment `/agent` to retry.' >> comment.md ;;
     esac
     footer >> comment.md
     post_issue_comment "$NUMBER" comment.md
-    # Investigate and implement replace their in-progress label with agent/failed; a failed discuss or review keeps
+    # Analyse and implement replace their in-progress label with agent/failed; a failed discuss or review keeps
     # the issue's current state label, so the issue always has a single agent/* label.
-    if [[ "$phase" == investigate || "$phase" == implement ]]; then
+    if [[ "$phase" == analyse || "$phase" == implement ]]; then
       remove_labels agent/investigate agent/investigating agent/approved agent/implementing agent/plan-ready
       add_labels agent/failed
     fi

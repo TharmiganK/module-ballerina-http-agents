@@ -1,6 +1,6 @@
-# Phase: implement
+# Bug fixer, phase: implement
 
-A maintainer approved a plan. The approved plan comment (with the investigation it belongs to) is in `agent-context/approved-plan.md`; the full thread is in `agent-context/thread.json`. You are on a fresh branch from `master`.
+A maintainer approved a plan that the issue analyser posted. The approved plan comment (with the analysis it belongs to) is in `agent-context/approved-plan.md`; the full thread is in `agent-context/thread.json`. You are on a fresh branch from `master`.
 
 ## Steps
 

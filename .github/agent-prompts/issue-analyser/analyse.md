@@ -1,4 +1,4 @@
-# Phase: investigate
+# Issue analyser, phase: analyse
 
 A maintainer asked you to analyse the issue in `agent-context/thread.json`. First decide what kind of issue it is, then handle it accordingly.
 

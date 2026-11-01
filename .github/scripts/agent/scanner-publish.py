@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Files the weekly analyser's public findings as issues, across all scope units of the run: drops unverified bugs and
+"""Files the defect scanner's public findings as issues, across all scope units of the run: drops unverified bugs and
 questions, skips findings whose fingerprint already exists in any agent-generated issue (open or closed), files at most
 MAX_ISSUES (default 6) per run with bugs first, and writes a publish report. With DRY_RUN=true nothing is filed.
 
@@ -23,7 +23,7 @@ CATEGORY = {
     "spec": ("Spec issue", ["Type/Improvement", "Area/Spec", "module/http", "agent/generated"]),
     "question": ("Question", ["Type/Question", "Area/Spec", "module/http", "agent/generated"]),
 }
-FP_MARKER = re.compile(r"<!--\s*analyser:fp=([a-z0-9-]+/[a-z0-9-]+)\s*-->")
+FP_MARKER = re.compile(r"<!--\s*(?:analyser|scanner):fp=([a-z0-9-]+/[a-z0-9-]+)\s*-->")
 
 
 def gh(*args, payload=None):
@@ -41,7 +41,7 @@ def clean(text):
     text = text or ""
     if "\n" not in text.strip() and "\\n" in text:
         text = text.replace("\\n", "\n")
-    return ATTRIBUTION.sub("", re.sub(r"<!--\s*analyser:[^>]*-->", "", text)).strip()
+    return ATTRIBUTION.sub("", re.sub(r"<!--\s*(?:analyser|scanner):[^>]*-->", "", text)).strip()
 
 
 def slug(key):
@@ -72,9 +72,9 @@ def issue_body(finding, category_label, verification, meta, fingerprint):
         parts += ["", "<details><summary>Test showing the current behaviour</summary>", "", "````ballerina",
                   clean(finding["repro"]["test_code"]), "````", "", "</details>"]
     parts += ["", "---",
-              f"<sub>Found by the {'find-similar analysis' if meta.get('seed') else 'weekly analyser'} in scope "
+              f"<sub>Found by the {'defect scanner (find similar)' if meta.get('seed') else 'defect scanner'} in scope "
               f"`{meta['unit']}` at `{meta['sha'][:12]}` · "
-              f"[workflow run]({RUN_URL})</sub>", "", f"<!-- analyser:fp={fingerprint} -->"]
+              f"[workflow run]({RUN_URL})</sub>", "", f"<!-- scanner:fp={fingerprint} -->"]
     return "\n".join(parts)
 
 

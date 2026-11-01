@@ -1,0 +1,283 @@
+name: Agent - Issue agent run
+
+# Reusable run of an issue agent, called by agent-issue-analyser.yml (phases analyse, discuss) and agent-bug-fixer.yml
+# (phases implement, review) after their gates have routed the event. The agent proposes with a read-only token; the
+# publish jobs validate its output and write to GitHub. Tooling always comes from the default branch.
+# Design: docs/proposals/agents/issue-agents.md
+on:
+  workflow_call:
+    inputs:
+      agent:
+        description: issue-analyser or bug-fixer (prompt directory and footer)
+        type: string
+        required: true
+      phase:
+        type: string
+        required: true
+      number:
+        description: Issue or PR the phase acts on
+        type: string
+        required: true
+      issue:
+        description: The issue the work belongs to (the PR's issue for review)
+        type: string
+        required: true
+      ref:
+        description: Ref to check out (empty = default branch)
+        type: string
+        default: ""
+      review_id:
+        type: string
+        default: ""
+      comment_id:
+        type: string
+        default: ""
+      mode:
+        type: string
+        default: ""
+      timeout:
+        type: number
+        required: true
+      max_turns:
+        type: number
+        required: true
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+      PACKAGE_USER:
+        required: true
+      PACKAGE_PAT:
+        required: true
+
+permissions: {}
+
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout }}
+    concurrency:
+      group: agent-issue-${{ inputs.issue }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    env:
+      AGENT: ${{ inputs.agent }}
+      packageUser: ${{ secrets.PACKAGE_USER }}
+      packagePAT: ${{ secrets.PACKAGE_PAT }}
+      PHASE: ${{ inputs.phase }}
+      NUMBER: ${{ inputs.number }}
+      ISSUE: ${{ inputs.issue }}
+      REPO: ${{ github.repository }}
+    steps:
+      # Agent tooling (scripts, prompts, schemas) always comes from the default branch, never from the PR checkout,
+      # which may be stale or PR-controlled.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: agent-tools
+          sparse-checkout: |
+            .github/scripts
+            .github/agent-prompts
+          persist-credentials: false
+      - name: Move agent tooling out of the workspace
+        run: |
+          mv agent-tools "$RUNNER_TEMP/agent-tools"
+          echo "TOOLS=$RUNNER_TEMP/agent-tools" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 50
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-build
+
+      - name: Build agent context
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVIEW_ID: ${{ inputs.review_id }}
+          COMMENT_ID: ${{ inputs.comment_id }}
+          MODE: ${{ inputs.mode }}
+        run: "$TOOLS/.github/scripts/agent/build-context.sh"
+
+      - name: Prepare prompt and branch
+        id: prep
+        env:
+          REVIEW_ID: ${{ inputs.review_id }}
+          COMMENT_ID: ${{ inputs.comment_id }}
+          MODE: ${{ inputs.mode }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          dir="$TOOLS/.github/agent-prompts/$AGENT"
+          base_sha=$(git rev-parse HEAD)
+          if [[ "$PHASE" == implement ]]; then
+            git checkout -q -b "agent/issue-$ISSUE"
+          fi
+          mkdir -p agent-output
+          jq -n --arg phase "$PHASE" --arg number "$NUMBER" --arg sha "$base_sha" \
+                --arg head_ref "$(git rev-parse --abbrev-ref HEAD)" --arg review_id "$REVIEW_ID" --arg mode "$MODE" \
+                '{phase: $phase, number: $number, base_sha: $sha, head_ref: $head_ref, review_id: $review_id, mode: $mode}' \
+                > agent-output/meta.json
+
+          read_only='Read,Glob,Grep,Bash(.github/scripts/run-tests.sh:*),Bash(target/ballerina-runtime/bin/bal:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh api:*)'
+          case "$PHASE" in
+            analyse|discuss)     tools="$read_only,Edit,Write" ;;
+            implement|review)    tools="$read_only,Edit,Write,Bash(git add:*),Bash(git commit:*)" ;;
+          esac
+          echo "tools=$tools" >> "$GITHUB_OUTPUT"
+          echo "schema=$(jq -c . "$dir/schemas/$PHASE.json")" >> "$GITHUB_OUTPUT"
+
+          delim="EOF_$(openssl rand -hex 8)"
+          {
+            echo "prompt<<$delim"
+            cat "$TOOLS/.github/agent-prompts/issue-common.md"
+            echo
+            cat "$dir/$PHASE.md"
+            echo
+            echo "## Run context"
+            echo
+            echo "- Repository: $REPO"
+            echo "- Issue: #$ISSUE (use $ISSUE wherever the instructions say <issue>)"
+            [[ "$PHASE" == review ]] && echo "- Pull request: #$NUMBER"
+            [[ -n "$REVIEW_ID" ]] && echo "- Triggering review id: $REVIEW_ID"
+            [[ -n "$COMMENT_ID" ]] && echo "- Triggering comment id: $COMMENT_ID"
+            [[ "$MODE" == auto ]] && echo "- Mode: auto (agent/auto-fix; handle every actionable open thread)"
+            echo "- Checked-out commit: $base_sha"
+            echo "- Workflow run: $RUN_URL"
+            echo "- Context files: $(ls agent-context | sed 's|^|agent-context/|' | tr '\n' ' ')"
+            echo "$delim"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run Claude
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          # Dispatched runs (sub-issues, relayed reviews, auto-fix) come from GITHUB_TOKEN, whose actor is github-actions[bot].
+          allowed_bots: ${{ github.event_name == 'workflow_dispatch' && 'github-actions' || '' }}
+          prompt: ${{ steps.prep.outputs.prompt }}
+          claude_args: |
+            --model claude-opus-5-5
+            --max-turns ${{ inputs.max_turns }}
+            --allowedTools "${{ steps.prep.outputs.tools }}"
+            --disallowedTools "Bash(git push:*),Bash(gh pr create:*),Bash(gh pr comment:*),Bash(gh pr edit:*),Bash(gh issue comment:*),Bash(gh issue edit:*),Bash(gh label:*),WebFetch,WebSearch"
+            --json-schema '${{ steps.prep.outputs.schema }}'
+
+      - name: Collect agent output
+        if: always() && steps.claude.outcome != 'skipped'
+        env:
+          STRUCTURED_OUTPUT: ${{ steps.claude.outputs.structured_output }}
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$STRUCTURED_OUTPUT" > agent-output/result.json
+          base_sha=$(jq -r .base_sha agent-output/meta.json)
+          if [[ "$PHASE" == implement || "$PHASE" == review ]]; then
+            if [[ -n "$(git status --porcelain)" ]]; then
+              echo "::warning::Agent left uncommitted changes; they are not included"
+              git status --short
+            fi
+            git format-patch --stdout "$base_sha"..HEAD > agent-output/changes.patch
+          fi
+          if [[ -n "$EXECUTION_FILE" && -f "$EXECUTION_FILE" ]]; then
+            jq '[.[] | select(.type == "result")] | last | {num_turns, duration_ms, total_cost_usd, usage, modelUsage}' \
+              "$EXECUTION_FILE" > agent-output/usage.json || true
+            cat agent-output/usage.json || true
+          fi
+
+      - name: Verify reproduction
+        if: >-
+          steps.claude.outcome == 'success'
+          && ((env.PHASE == 'analyse' && fromJSON(steps.claude.outputs.structured_output || '{}').outcome == 'plan-ready')
+            || (env.PHASE == 'discuss' && fromJSON(steps.claude.outputs.structured_output || '{}').new_plan_version == 1))
+        run: "$TOOLS/.github/scripts/agent/verify-repro.sh"
+
+      - uses: actions/upload-artifact@v7
+        if: always() && steps.claude.outcome != 'skipped'
+        with:
+          name: agent-output
+          path: agent-output/
+          retention-days: 14
+          overwrite: true
+
+  publish-issue:
+    needs: agent
+    if: contains(fromJSON('["analyse","discuss"]'), inputs.phase)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      AGENT: ${{ inputs.agent }}
+      NUMBER: ${{ inputs.number }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: agent-output
+          path: agent-output
+      - run: .github/scripts/agent/publish.sh "${{ inputs.phase }}"
+
+  publish-code:
+    needs: agent
+    if: contains(fromJSON('["implement","review"]'), inputs.phase)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      AGENT: ${{ inputs.agent }}
+      NUMBER: ${{ inputs.number }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 1
+      - uses: actions/download-artifact@v8
+        with:
+          name: agent-output
+          path: agent-output
+      - run: .github/scripts/agent/publish.sh "${{ inputs.phase }}"
+
+  report-failure:
+    needs: [agent, publish-issue, publish-code]
+    if: failure()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      AGENT: ${{ inputs.agent }}
+      NUMBER: ${{ inputs.number }}
+      FAILED_PHASE: ${{ inputs.phase }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - run: .github/scripts/agent/publish.sh fail

@@ -4,7 +4,7 @@ name: Agent - Auto-fix scheduler
 # then asks the bug fixer to address every open maintainer and QA review thread in one run. Every new review, review
 # comment or PR comment cancels the waiting run and restarts the timer (concurrency with cancel-in-progress), so a
 # burst of comments results in one bug fixer run. At most AUTOFIX_MAX_ROUNDS (default 3) automatic rounds per PR.
-# Design: docs/proposals/agents/bug-fixer-agent.md
+# Design: docs/proposals/agents/issue-agents.md
 on:
   pull_request_review:
     types: [submitted]
@@ -93,7 +93,7 @@ jobs:
           rounds=$(jq '[(.comments[], .reviews[]).body | select(test("<!-- bug-fixer:auto-round -->"))] | length' <<< "$pr")
           if (( rounds >= MAX_ROUNDS )); then
             if ! jq -e '[.comments[].body | select(test("<!-- bug-fixer:auto-paused -->"))] | length > 0' <<< "$pr" > /dev/null; then
-              printf 'Auto-fix paused after %s automatic rounds. Comment `/bug-fixer` (or review with `/bug-fixer`) to continue.\n\n<!-- bug-fixer:auto-paused -->' \
+              printf 'Auto-fix paused after %s automatic rounds. Comment `/agent` (or start a review with `/agent`) to continue.\n\n<!-- bug-fixer:auto-paused -->' \
                 "$rounds" | gh pr comment "$PR" --repo "$REPO" --body-file - > /dev/null
             fi
             echo "::notice::Round limit ($MAX_ROUNDS) reached for #$PR"

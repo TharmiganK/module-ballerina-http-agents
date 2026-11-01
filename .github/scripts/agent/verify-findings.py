@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Re-runs the reproduction tests of an agent's findings and records, per finding key, whether one of its own test
-functions failed. Used by the QA agent (bugs and spec deviations) and the weekly analyser (bugs and questions).
+functions failed. Used by the QA agent (bugs and spec deviations) and the defect scanner (bugs and questions).
 Groups in the same Ballerina test package run in a single `bal test` invocation.
 
-Env: GROUP_PREFIX (for example qa_12_ or analyser_7_). Reads agent-output/result.json; writes
+Env: GROUP_PREFIX (for example qa_12_ or scanner_7_). Reads agent-output/result.json; writes
 agent-output/repro.json and agent-output/repro-<pkg>.log.
 """
 import collections

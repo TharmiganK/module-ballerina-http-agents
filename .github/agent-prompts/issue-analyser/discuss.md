@@ -1,6 +1,6 @@
-# Phase: discuss
+# Issue analyser, phase: discuss
 
-A user with write access commented on an issue you are investigating. The triggering comment id is in the run context; the whole thread, including your previous investigation and plan comments, is in `agent-context/thread.json`.
+A user with write access commented on an issue you analysed. The triggering comment id is in the run context; the whole thread, including your previous analysis and plan comments, is in `agent-context/thread.json`.
 
 ## Steps
 
@@ -17,7 +17,7 @@ A user with write access commented on an issue you are investigating. The trigge
   - `needs-info` when you still cannot reproduce or need answers before planning,
   - `no-change` when the comment needs only a reply and the issue state should stay as it is.
 - `new_plan_version`: set only when you revise the plan; it must be the latest plan version plus one. When there is no plan yet (the issue is `agent/needs-info`) and the new information lets you reproduce the bug, set it to `1` and write `## Plan v1`.
-- `test_package` and `test_filter`: required when `new_plan_version` is `1`, as in the investigate phase. The workflow then re-runs group `repro_<issue>` itself, so the reproduction test must be present in the workspace when you finish; the plan is only approvable if that re-run fails.
+- `test_package` and `test_filter`: required when `new_plan_version` is `1`, as in the analyse phase. The workflow then re-runs group `repro_<issue>` itself, so the reproduction test must be present in the workspace when you finish; the plan is only approvable if that re-run fails.
 - `comment`: the Markdown reply. Address the commenter's points directly and briefly. When you revise the plan, end with the complete new plan, not a diff:
 
 ```markdown

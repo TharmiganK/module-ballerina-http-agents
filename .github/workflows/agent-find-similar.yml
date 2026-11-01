@@ -1,9 +1,10 @@
 name: Agent - Find similar defects
+run-name: ${{ github.event.label.name == 'agent/find-similar' && format('Find defects like #{0}', github.event.issue.number || github.event.pull_request.number) || format('Ignore label {0} on #{1}', github.event.label.name, github.event.issue.number || github.event.pull_request.number) }}
 
 # Label an issue or a PR with agent/find-similar: a scoper agent derives the defect pattern from it and generates up
-# to three scope units, and the weekly analyser hunts for other occurrences in those units (verified reproductions,
+# to three scope units, and the defect scanner hunts for other occurrences in those units (verified reproductions,
 # dedup, issues linking the seed, a summary comment on the seed).
-# Design: docs/proposals/agents/weekly-analyser.md
+# Design: docs/proposals/agents/defect-scanner.md
 on:
   issues:
     types: [labeled]
@@ -64,7 +65,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$SEED" == issue:* ]]; then
-            PHASE=investigate .github/scripts/agent/build-context.sh
+            PHASE=analyse .github/scripts/agent/build-context.sh
           else
             PHASE=qa .github/scripts/agent/build-context.sh
           fi
@@ -144,7 +145,7 @@ jobs:
     steps:
       - run: |
           set -euo pipefail
-          gh workflow run agent-weekly-analyser.yml --repo "$REPO" -f custom_scopes="$SCOPES" -f seed="$SEED"
+          gh workflow run agent-defect-scanner.yml --repo "$REPO" -f custom_scopes="$SCOPES" -f seed="$SEED"
           {
             n=$(jq length <<< "$SCOPES")
             echo "Looking for the same mistake in $n $( ((n == 1)) && echo area || echo areas) of the module:"
@@ -156,7 +157,7 @@ jobs:
             echo "I'll post the results here when the search finishes."
             echo
             echo "---"
-            echo "<sub>Posted by the find-similar scoper · [workflow run]($RUN_URL)</sub>"
+            echo "<sub>Posted by the defect scanner (find similar) · [workflow run]($RUN_URL)</sub>"
           } > comment.md
           gh api "repos/$REPO/issues/$NUMBER/comments" -F body=@comment.md > /dev/null
 

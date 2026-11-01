@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Delivers the weekly analyser's security findings privately. Never prints finding content.
+"""Delivers the defect scanner's security findings privately. Never prints finding content.
 
 Channels (SECURITY_CHANNEL):
 - advisory: a draft repository security advisory per finding (public repositories only; needs
@@ -23,7 +23,7 @@ DRY_RUN = os.environ.get("DRY_RUN", "false") == "true"
 ROOT = Path(os.environ.get("SECURITY_DIR", "security"))
 MAX_SECURITY = int(os.environ.get("MAX_SECURITY") or 3)
 SEVERITY = {"critical": 0, "high": 1, "medium": 2, "low": 3}
-FP_MARKER = re.compile(r"<!--\s*analyser:sec=([a-z0-9-]+/[a-z0-9-]+)\s*-->")
+FP_MARKER = re.compile(r"<!--\s*(?:analyser|scanner):sec=([a-z0-9-]+/[a-z0-9-]+)\s*-->")
 
 
 def gh(args, token=None, payload=None):
@@ -50,11 +50,11 @@ def body_for(finding, meta, fingerprint):
     return "\n".join([
         *([ISSUE_NOTE, ""] if CHANNEL == "issue" else []),
         re.sub(r"^.*Generated with \[Claude Code\].*$\n?", "",
-               re.sub(r"<!--\s*analyser:[^>]*-->", "", finding["body"]), flags=re.MULTILINE).strip(), "",
+               re.sub(r"<!--\s*(?:analyser|scanner):[^>]*-->", "", finding["body"]), flags=re.MULTILINE).strip(), "",
         "---",
-        f"Found by the weekly analyser in scope `{meta['unit']}` at `{meta['sha'][:12]}` ([workflow run]({RUN_URL})). "
+        f"Found by the defect scanner in scope `{meta['unit']}` at `{meta['sha'][:12]}` ([workflow run]({RUN_URL})). "
         "This finding has not been reviewed by a human yet.", "",
-        f"<!-- analyser:sec={fingerprint} -->",
+        f"<!-- scanner:sec={fingerprint} -->",
     ])
 
 

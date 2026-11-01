@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Validates the find-similar scoper's output and turns it into custom analyser units.
+"""Validates the find-similar scoper's output and turns it into custom defect scanner units.
 
 Drops paths that do not exist and unknown test packages, prefixes unit ids with the seed so their fingerprints never
-collide with catalogue units, and requires at least one usable unit. Prints the units as compact JSON (the analyser's
+collide with catalogue units, and requires at least one usable unit. Prints the units as compact JSON (the defect scanner's
 custom_scopes input).
 
 Usage: find-similar-scope.py <result.json> <seed: issue:<n>|pr:<n>>

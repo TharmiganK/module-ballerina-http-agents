@@ -1,13 +1,14 @@
-name: Agent - Weekly analyser
+name: Agent - Defect scanner
+run-name: ${{ inputs.seed != '' && format('Find similar to {0}', inputs.seed) || (github.event_name == 'schedule' && 'Weekly scan' || format('Scan {0}', inputs.scope || '(automatic selection)')) }}
 
-# Design: docs/proposals/agents/weekly-analyser.md
+# Design: docs/proposals/agents/defect-scanner.md
 on:
   schedule:
     - cron: "0 1 * * 1"
   workflow_dispatch:
     inputs:
       scope:
-        description: Comma-separated scope unit ids from .github/agent-prompts/analyser/scopes.json (empty = automatic selection)
+        description: Comma-separated scope unit ids from .github/agent-prompts/defect-scanner/scopes.json (empty = automatic selection)
         required: false
         default: ""
       dry_run:
@@ -27,7 +28,7 @@ permissions: {}
 
 # Scheduled and catalogue runs are serialised; find-similar runs are independent of them and of each other.
 concurrency:
-  group: ${{ inputs.custom_scopes != '' && format('find-similar-{0}', github.run_id) || 'weekly-analyser' }}
+  group: ${{ inputs.custom_scopes != '' && format('find-similar-{0}', github.run_id) || 'defect-scanner' }}
   cancel-in-progress: false
 
 env:
@@ -58,11 +59,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           SCOPE_INPUT: ${{ inputs.scope }}
-          UNITS_PER_RUN: ${{ vars.ANALYSER_UNITS_PER_RUN }}
+          UNITS_PER_RUN: ${{ vars.SCANNER_UNITS_PER_RUN }}
           UPSTREAM_ISSUE_REPOS: ${{ vars.UPSTREAM_ISSUE_REPOS }}
           CUSTOM_SCOPES: ${{ inputs.custom_scopes }}
           SEED: ${{ inputs.seed }}
-        run: python3 .github/scripts/agent/analyser-plan.py
+        run: python3 .github/scripts/agent/scanner-plan.py
       - id: info
         env:
           GH_TOKEN: ${{ github.token }}
@@ -74,7 +75,7 @@ jobs:
           echo "private=$(gh api "repos/$REPO" --jq .private)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v7
         with:
-          name: analyser-context
+          name: scanner-context
           path: agent-context/
           retention-days: 14
 
@@ -96,7 +97,7 @@ jobs:
       packagePAT: ${{ secrets.PACKAGE_PAT }}
       REPO: ${{ github.repository }}
       UNIT: ${{ matrix.unit }}
-      GROUP_PREFIX: analyser_${{ github.run_number }}_
+      GROUP_PREFIX: scanner_${{ github.run_number }}_
     steps:
       - uses: actions/checkout@v7
         with:
@@ -108,8 +109,8 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
-          name: analyser-context
-          path: analyser-context
+          name: scanner-context
+          path: scanner-context
 
       - name: Prepare prompt
         id: prep
@@ -121,17 +122,17 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p agent-context agent-output agent-security
-          cp analyser-context/known-issues.json agent-context/
-          cp "analyser-context/$UNIT/scope.json" agent-context/scope.json
+          cp scanner-context/known-issues.json agent-context/
+          cp "scanner-context/$UNIT/scope.json" agent-context/scope.json
           cp agent-context/scope.json agent-output/scope.json
           jq -n --arg unit "$UNIT" --arg sha "$SHA" --arg run "$GITHUB_RUN_NUMBER" --arg dry "$DRY_RUN" \
             '{unit: $unit, sha: $sha, run_number: $run, dry_run: ($dry == "true")}' > agent-output/meta.json
           cp agent-output/meta.json agent-security/meta.json
-          echo "schema=$(jq -c . .github/agent-prompts/analyser/schema.json)" >> "$GITHUB_OUTPUT"
+          echo "schema=$(jq -c . .github/agent-prompts/defect-scanner/schema.json)" >> "$GITHUB_OUTPUT"
           delim="EOF_$(openssl rand -hex 8)"
           {
             echo "prompt<<$delim"
-            cat .github/agent-prompts/analyser/prompt.md
+            cat .github/agent-prompts/defect-scanner/prompt.md
             echo
             echo "## Run context"
             echo
@@ -205,7 +206,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always() && steps.claude.outcome != 'skipped'
         with:
-          name: analyser-output-${{ matrix.unit }}
+          name: scanner-output-${{ matrix.unit }}
           path: agent-output/
           retention-days: 14
           overwrite: true
@@ -213,7 +214,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: steps.claude.outcome == 'success'
         with:
-          name: analyser-security-${{ matrix.unit }}
+          name: scanner-security-${{ matrix.unit }}
           path: agent-security/
           retention-days: 3
           overwrite: true
@@ -230,7 +231,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       DRY_RUN: ${{ needs.plan.outputs.dry_run }}
-      MAX_ISSUES: ${{ vars.ANALYSER_MAX_ISSUES }}
+      MAX_ISSUES: ${{ vars.SCANNER_MAX_ISSUES }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -239,13 +240,13 @@ jobs:
       - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
-          pattern: analyser-output-*
+          pattern: scanner-output-*
           path: outputs
-      - run: python3 .github/scripts/agent/analyser-publish.py
+      - run: python3 .github/scripts/agent/scanner-publish.py
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: analyser-publish
+          name: scanner-publish
           path: publish/
           retention-days: 14
           if-no-files-found: ignore
@@ -276,7 +277,7 @@ jobs:
       - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
-          pattern: analyser-security-*
+          pattern: scanner-security-*
           path: security
       - name: Decrypt security findings
         env:
@@ -285,7 +286,7 @@ jobs:
           shopt -s nullglob
           for dir in security/*/; do .github/scripts/agent/security-transfer.sh decrypt "$dir"; done
       - id: deliver
-        run: python3 .github/scripts/agent/analyser-security.py
+        run: python3 .github/scripts/agent/scanner-security.py
 
   update-state:
     needs: [plan, agent, publish-issues, publish-security]
@@ -302,12 +303,12 @@ jobs:
       - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
-          pattern: analyser-output-*
+          pattern: scanner-output-*
           path: outputs
       - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
-          name: analyser-publish
+          name: scanner-publish
           path: publish
       - name: Update state and report
         env:
@@ -327,9 +328,9 @@ jobs:
           else
             git worktree add --orphan -b agent-state state
           fi
-          python3 .github/scripts/agent/analyser-state.py state
+          python3 .github/scripts/agent/scanner-state.py state
           git -C state add -A
-          git -C state commit -q -m "Weekly analyser run $RUN_NUMBER: $(jq -r 'join(", ")' <<< "$UNITS")"
+          git -C state commit -q -m "Defect scanner run $RUN_NUMBER: $(jq -r 'join(", ")' <<< "$UNITS")"
           git -C state push -q origin agent-state
 
   # find-similar: one summary comment on the issue or PR the units were generated from.
@@ -353,7 +354,7 @@ jobs:
       - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
-          name: analyser-publish
+          name: scanner-publish
           path: publish
       - name: Comment on the seed
         run: |
@@ -388,13 +389,13 @@ jobs:
               echo "</details>"
             fi
             echo
-            report_url=$(gh api "repos/$REPO/contents/analyser/reports?ref=agent-state" \
+            report_url=$(gh api "repos/$REPO/contents/defect-scanner/reports?ref=agent-state" \
               --jq ".[] | select(.name | endswith(\"-similar-${SEED/:/-}-run${RUN_NUMBER}.md\")) | .html_url" 2> /dev/null || true)
             if [[ -n "$report_url" ]]; then
               echo "[What was examined]($report_url)"
             fi
             echo
             echo "---"
-            echo "<sub>Posted by the weekly analyser in find-similar mode · [workflow run]($RUN_URL)</sub>"
+            echo "<sub>Posted by the defect scanner (find similar) · [workflow run]($RUN_URL)</sub>"
           } > comment.md
           gh api "repos/$REPO/issues/$number/comments" -F body=@comment.md > /dev/null

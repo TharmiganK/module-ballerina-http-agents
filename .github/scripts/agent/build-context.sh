@@ -2,7 +2,7 @@
 # Writes the issue/PR thread the agent works from into agent-context/, tagging each entry as trusted
 # (author has write access) or untrusted. For the implement phase it also resolves the approved plan.
 #
-# Env: REPO, PHASE (investigate|discuss|implement|review|qa), NUMBER, and for review MODE=auto or REVIEW_ID or COMMENT_ID.
+# Env: REPO, PHASE (analyse|discuss|implement|review|qa), NUMBER, and for review MODE=auto or REVIEW_ID or COMMENT_ID.
 set -euo pipefail
 
 : "${REPO:?}" "${PHASE:?}" "${NUMBER:?}"
@@ -36,7 +36,7 @@ issue_thread() {
 }
 
 case "$PHASE" in
-  investigate|discuss)
+  analyse|discuss)
     issue_thread "$NUMBER" > "$OUT/thread.json"
     ;;
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Selects the weekly analyser's scope units and writes their context.
+"""Selects the defect scanner's scope units and writes their context.
 
 Selection: the units given in SCOPE_INPUT (comma-separated); otherwise UNITS_PER_RUN units (default 4): units never
 analysed first (in catalogue order), then by the highest score of weeks since the last analysis plus 4 if any of the
@@ -19,7 +19,7 @@ import os
 import subprocess
 from pathlib import Path
 
-SCOPES = json.loads(Path(".github/agent-prompts/analyser/scopes.json").read_text())["units"]
+SCOPES = json.loads(Path(".github/agent-prompts/defect-scanner/scopes.json").read_text())["units"]
 OUT = Path("agent-context")
 
 
@@ -28,7 +28,7 @@ def git(*args):
 
 
 def load_state():
-    shown = git("show", "origin/agent-state:analyser/state.json")
+    shown = git("show", "origin/agent-state:defect-scanner/state.json")
     return json.loads(shown.stdout) if shown.returncode == 0 else {"units": {}}
 
 

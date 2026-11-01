@@ -1,0 +1,104 @@
+name: Agent - Issue analyser
+run-name: >-
+  ${{ github.event_name == 'workflow_dispatch' && format('Analyse sub-issue #{0}', inputs.issue)
+  || github.event_name == 'issue_comment' && format('Discuss #{0}: {1}', github.event.issue.number, github.event.issue.title)
+  || github.event.label.name == 'agent/investigate' && format('Analyse #{0}: {1}', github.event.issue.number, github.event.issue.title)
+  || format('Ignore label {0} on #{1}', github.event.label.name, github.event.issue.number) }}
+
+# Analyses an issue on request: classifies it (bug, improvement, feature, question, or several things to split),
+# reproduces bugs and plans the fix, writes a proposal for improvements and features, answers questions, and discusses
+# its plan or proposal with maintainers. Implementation is the bug fixer's job (agent-bug-fixer.yml).
+# Design: docs/proposals/agents/issue-agents.md
+on:
+  issues:
+    types: [labeled]
+  issue_comment:
+    types: [created]
+  # Dispatched by the publish step for each sub-issue of a split issue (labels added with GITHUB_TOKEN start nothing).
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Issue to analyse
+        required: true
+
+permissions: {}
+
+jobs:
+  gate:
+    # Cheap pre-filter so unrelated events do not start a runner. Only maintainers can start the agent.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'issues' && github.event.label.name == 'agent/investigate')
+      || (github.event_name == 'issue_comment'
+        && !github.event.issue.pull_request
+        && github.event.comment.user.type != 'Bot'
+        && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+        && startsWith(github.event.comment.body, '/agent'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    outputs:
+      phase: ${{ steps.route.outputs.phase }}
+      number: ${{ steps.route.outputs.number }}
+      comment_id: ${{ steps.route.outputs.comment_id }}
+    steps:
+      - name: Route event to a phase
+        id: route
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DISPATCH_ISSUE: ${{ inputs.issue }}
+        run: |
+          set -euo pipefail
+          ev="$GITHUB_EVENT_PATH"
+          number="${DISPATCH_ISSUE:-$(jq -r .issue.number "$ev")}"
+          [[ "$number" =~ ^[0-9]+$ ]] || { echo "::error::Invalid issue number"; exit 1; }
+          labels=$(gh api "repos/$REPO/issues/$number" --jq '[.labels[].name]')
+          has() { jq -e --arg l "$1" 'index($l)' <<< "$labels" > /dev/null; }
+          # Issues carry a single agent/* state label; trigger labels are consumed when a run starts.
+          STATES=(agent/investigate agent/investigating agent/plan-ready agent/needs-info agent/analysed agent/split agent/approved agent/implementing agent/pr-open agent/failed)
+          label() { gh api "repos/$REPO/issues/$number/labels" -f "labels[]=$1" > /dev/null; }
+          unlabel() { for l in "$@"; do gh api -X DELETE "repos/$REPO/issues/$number/labels/$(jq -rn --arg s "$l" '$s|@uri')" > /dev/null 2>&1 || true; done; }
+
+          phase="" comment_id=""
+          if [[ "$GITHUB_EVENT_NAME" == issue_comment ]]; then
+            comment_id=$(jq -r .comment.id "$ev")
+            if [[ "$(jq -r '.comment.body | split("\n")[0] | split(" ")[0] | gsub("\\s"; "")' "$ev")" != /agent ]]; then
+              echo "::notice::Comment does not start with the /agent command"
+            elif has agent/plan-ready || has agent/needs-info || has agent/analysed || has agent/failed; then
+              phase=discuss
+            else
+              echo "::notice::#$number is not waiting for discussion (not analysed yet, a run in progress, or a PR is open)"
+            fi
+          elif has agent/investigating || has agent/implementing || has agent/pr-open; then
+            echo "::notice::#$number already has an agent run in progress or an open PR"
+            unlabel agent/investigate
+          else
+            phase=analyse
+            unlabel "${STATES[@]}"
+            label agent/investigating
+          fi
+          { echo "phase=$phase"; echo "number=$number"; echo "comment_id=$comment_id"; } >> "$GITHUB_OUTPUT"
+          echo "Phase: ${phase:-none} for #$number"
+
+  run:
+    needs: gate
+    if: needs.gate.outputs.phase != ''
+    uses: ./.github/workflows/agent-issue-run.yml
+    # Upper bound for the reusable workflow, which GitHub checks for every nested job (including the code publish job
+    # this agent never runs); each nested job requests only what it needs.
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: write
+    secrets: inherit
+    with:
+      agent: issue-analyser
+      phase: ${{ needs.gate.outputs.phase }}
+      number: ${{ needs.gate.outputs.number }}
+      issue: ${{ needs.gate.outputs.number }}
+      comment_id: ${{ needs.gate.outputs.comment_id }}
+      timeout: ${{ needs.gate.outputs.phase == 'analyse' && 55 || 35 }}
+      max_turns: ${{ needs.gate.outputs.phase == 'analyse' && 60 || 30 }}
