@@ -35,13 +35,71 @@ remove_labels() {
   done
 }
 
-# Agent text must not forge the markers the workflow relies on.
-strip_markers() { perl -0pe 's/<!--\s*(bug-fixer|ci-tests):.*?-->//gs; s/^.*Generated with \[Claude Code\].*\n?//gm'; }
+# Agent text must not forge the markers the workflow relies on. Text that arrives with escaped newlines and no real
+# ones (a double-encoded JSON string) is unescaped.
+strip_markers() {
+  perl -0pe 's/\\n/\n/g unless /\n(?!\z)/; s/<!--\s*(bug-fixer|ci-tests):.*?-->//gs; s/^.*Generated with \[Claude Code\].*\n?//gm'
+}
 
 footer() { printf '\n\n---\n<sub>Posted by the bug fixer agent · [workflow run](%s)</sub>\n' "$RUN_URL"; }
 
 post_issue_comment() {
   gh api "repos/$REPO/issues/$1/comments" -F body=@"$2" > /dev/null
+}
+
+# Opens one sub-issue per part of a mixed issue, links it to the parent and starts an investigation on each.
+split_issue() {
+  local count i part title kind type_label child child_id existing
+  local -a carry children args
+  gh api "repos/$REPO/issues/$NUMBER" > parent.json
+  ! jq -e '.body // "" | test("<!-- bug-fixer:split-from=")' parent.json > /dev/null \
+    || die "#$NUMBER was split from another issue and cannot be split again"
+  count=$(jq '.parts | length' "$RESULT")
+  (( count >= 2 && count <= 5 )) || die "A split needs 2 to 5 parts, got $count"
+  field .comment | strip_markers > comment.md
+  [[ -s comment.md ]] || die "Empty comment"
+  mapfile -t carry < <(jq -r '.labels[].name | select((startswith("Type/") or startswith("agent/")) | not)' parent.json)
+  existing=$(gh api --paginate "repos/$REPO/issues/$NUMBER/sub_issues" --jq '.[].title' 2> /dev/null || true)
+  children=()
+  printf '\n\n**Sub-issues**\n\n' >> comment.md
+  for (( i = 0; i < count; i++ )); do
+    part=$(jq -c ".parts[$i]" "$RESULT")
+    title=$(jq -r .title <<< "$part")
+    kind=$(jq -r .classification <<< "$part")
+    case "$kind" in
+      bug) type_label=Type/Bug ;; improvement) type_label=Type/Improvement ;; feature) type_label=Type/NewFeature ;;
+      *) die "Invalid part classification: $kind" ;;
+    esac
+    if grep -qxF "$title" <<< "$existing"; then
+      echo "::notice::Sub-issue '$title' already exists"
+      continue
+    fi
+    {
+      printf '_Split from #%s by the issue analyser._\n\n' "$NUMBER"
+      jq -r .body <<< "$part" | strip_markers
+      printf '\n<!-- bug-fixer:split-from=%s -->\n' "$NUMBER"
+    } > child.md
+    args=(--repo "$REPO" --title "$title" --body-file child.md --label "$type_label" --label agent/investigate)
+    for l in "${carry[@]+"${carry[@]}"}"; do args+=(--label "$l"); done
+    child=$(gh issue create "${args[@]}")
+    child=${child##*/}
+    child_id=$(gh api "repos/$REPO/issues/$child" --jq .id)
+    gh api "repos/$REPO/issues/$NUMBER/sub_issues" -F sub_issue_id="$child_id" > /dev/null \
+      || echo "::warning::Could not link #$child as a sub-issue of #$NUMBER"
+    children+=("$child")
+    printf -- '- #%s (%s)\n' "$child" "${type_label#Type/}" >> comment.md
+  done
+  (( ${#children[@]} > 0 )) || die "Every part already exists as a sub-issue"
+  printf '\nEach sub-issue is investigated on its own: bugs get a reproduction and a fix plan to approve, improvements and features get an analysis and a proposal.' >> comment.md
+  footer >> comment.md
+  post_issue_comment "$NUMBER" comment.md
+  remove_labels agent/investigating agent/plan-ready agent/needs-info agent/analysed agent/failed
+  add_labels agent/split
+  # Labels added with GITHUB_TOKEN start no workflow, so each investigation is dispatched explicitly.
+  for child in "${children[@]}"; do
+    gh workflow run agent-bug-fixer.yml --repo "$REPO" -f issue="$child" \
+      || echo "::warning::Could not start the investigation of #$child; add agent/investigate to it again"
+  done
 }
 
 latest_plan_version() {
@@ -139,6 +197,11 @@ case "$MODE" in
     require_result
     outcome=$(field .outcome)
     classification=$(field .classification)
+    if [[ "$classification" == mixed || "$outcome" == split ]]; then
+      [[ "$classification" == mixed && "$outcome" == split ]] || die "Only a mixed issue can be split, and it must end split"
+      split_issue
+      exit 0
+    fi
     case "$classification" in
       bug)         [[ "$outcome" == plan-ready || "$outcome" == needs-info ]] || die "A bug must end plan-ready or needs-info, not $outcome" ;;
       improvement|feature|question)
@@ -299,23 +362,39 @@ case "$MODE" in
       dispatch_ci "$head_ref" "$NUMBER"
     fi
 
-    jq -c '.replies[]' "$RESULT" | while IFS= read -r reply; do
+    # All thread replies and the summary go out as one review, so the PR timeline shows a single entry for the round.
+    # The footer is only on the summary; replies carry a hidden marker so pr-threads.py knows who answered last.
+    gql() { gh api graphql "$@"; }
+    pr_node=$(gh pr view "$NUMBER" --repo "$REPO" --json id --jq .id)
+    review_node=$(gql -f query='mutation($pr: ID!) { addPullRequestReview(input: {pullRequestId: $pr}) { pullRequestReview { id } } }' \
+      -f pr="$pr_node" --jq .data.addPullRequestReview.pullRequestReview.id)
+    discard_review() {
+      gql -f query='mutation($r: ID!) { deletePullRequestReview(input: {pullRequestReviewId: $r}) { clientMutationId } }' \
+        -f r="$review_node" > /dev/null || true
+    }
+    trap discard_review ERR
+    to_resolve=()
+    while IFS= read -r reply; do
       id=$(jq -r '.comment_id' <<< "$reply")
-      jq -r '.body' <<< "$reply" | strip_markers > reply.md
-      footer >> reply.md
-      gh api "repos/$REPO/pulls/$NUMBER/comments/$id/replies" -F body=@reply.md > /dev/null
-      if [[ "$(jq -r '.resolve' <<< "$reply")" == true ]]; then
-        thread=$(jq -r --argjson id "$id" '.[] | select(any(.comments[]; .id == $id)) | .thread_id' threads.json)
-        if [[ -n "$thread" ]]; then
-          gh api graphql -f query='mutation($t: ID!) { resolveReviewThread(input: {threadId: $t}) { thread { isResolved } } }' \
-            -f t="$thread" > /dev/null || echo "::warning::Could not resolve review thread for comment $id"
-        fi
-      fi
-    done
+      thread=$(jq -r --argjson id "$id" '.[] | select(any(.comments[]; .id == $id)) | .thread_id' threads.json)
+      [[ -n "$thread" ]] || { discard_review; die "No review thread contains comment $id"; }
+      body="$(jq -r '.body' <<< "$reply" | strip_markers)"$'\n\n<!-- bug-fixer:reply -->'
+      gql -f query='mutation($r: ID!, $t: ID!, $b: String!) {
+          addPullRequestReviewThreadReply(input: {pullRequestReviewId: $r, pullRequestReviewThreadId: $t, body: $b}) { comment { id } } }' \
+        -f r="$review_node" -f t="$thread" -f b="$body" > /dev/null
+      [[ "$(jq -r '.resolve' <<< "$reply")" == true ]] && to_resolve+=("$thread")
+    done < <(jq -c '.replies[]' "$RESULT")
     field .summary | strip_markers > comment.md
     [[ "$mode" == auto ]] && printf '\n\n<!-- bug-fixer:auto-round -->' >> comment.md
     footer >> comment.md
-    post_issue_comment "$NUMBER" comment.md
+    gql -f query='mutation($r: ID!, $b: String!) {
+        submitPullRequestReview(input: {pullRequestReviewId: $r, event: COMMENT, body: $b}) { pullRequestReview { id } } }' \
+      -f r="$review_node" -f b="$(cat comment.md)" > /dev/null
+    trap - ERR
+    for thread in "${to_resolve[@]+"${to_resolve[@]}"}"; do
+      gql -f query='mutation($t: ID!) { resolveReviewThread(input: {threadId: $t}) { thread { isResolved } } }' \
+        -f t="$thread" > /dev/null || echo "::warning::Could not resolve review thread $thread"
+    done
 
     # With agent/auto-fix, look again after this round: feedback may have arrived while the agent was working.
     if [[ "$(gh pr view "$NUMBER" --repo "$REPO" --json labels --jq '[.labels[].name] | index("agent/auto-fix")')" != null ]]; then

@@ -108,6 +108,7 @@ An issue carries a single `agent/*` label at a time, showing its state. The two 
 | `agent/plan-ready` | Publish job | Root cause and a plan were posted. |
 | `agent/needs-info` | Publish job | Could not reproduce or needs details. |
 | `agent/analysed` | Publish job | Classified as an improvement, feature or question; analysis and proposal (or answer) posted. Not implemented automatically. |
+| `agent/split` | Publish job | The issue covered several things and was split into linked sub-issues, each investigated separately. |
 | `agent/approved` | Maintainer (trigger) | Implement the latest plan version posted before this label was added. Replaced by `agent/implementing` when the run starts. |
 | `agent/implementing` | Workflow | Implementation running. |
 | `agent/pr-open` | Publish job | Fix PR opened. |
@@ -120,6 +121,8 @@ stateDiagram-v2
     [*] --> investigating: maintainer adds agent/investigate
     investigating --> plan_ready
     investigating --> needs_info
+    investigating --> analysed
+    investigating --> split: mixed issue, sub-issues opened
     plan_ready --> plan_ready: /bug-fixer comment (Plan vN+1)
     needs_info --> plan_ready: /bug-fixer comment
     needs_info --> needs_info: /bug-fixer comment
@@ -194,6 +197,9 @@ The publish job posts the comment, adds `agent/plan-ready` or `agent/needs-info`
 | `improvement` | Use case, current behaviour with permalinks, related work, a proposal (API, behaviour, implementation, compatibility and spec impact, tests), alternatives and open questions | `analysed` | `Type/Improvement` |
 | `feature` | As for improvements | `analysed` | `Type/NewFeature` |
 | `question` | A direct answer with spec and code references and a checked example | `analysed` | `Type/Question` |
+| `mixed` | Nothing is investigated. The agent splits the issue into 2 to 5 self-contained parts (bug, improvement or feature); the publish job opens one sub-issue per part (Type label, the parent's `module/*`, `Area/*` and `Priority/*` labels, a _Split from #N_ line), links each to the parent with the sub-issues API and dispatches an investigation on each | `split` | none; each sub-issue gets its own |
+
+An issue is `mixed` only when it asks for independent things that would be fixed, decided or released separately; a reporter's suggested fix or a workaround does not make it mixed. A sub-issue is never split again (the publish job refuses it), and re-running investigate on a split parent skips parts whose title already exists as a sub-issue. Bug sub-issues then follow the normal flow: a verified plan that a maintainer approves. Improvement and feature sub-issues get an analysis and a proposal.
 
 A `Type/*` label set by a maintainer is kept; the agent follows it unless clearly wrong and then only says so in its comment. Behaviour that contradicts the spec or the API docs is a bug even when reported as a feature request. Proposals contain no `## Plan v` section and are not implemented automatically: `agent/approved` on an `agent/analysed` issue is declined with a comment. `/bug-fixer` comments refine an analysis or proposal like a plan; if the discussion shows the issue is a bug, the agent posts a verified Plan v1 and the issue moves to `agent/plan-ready`.
 
@@ -267,7 +273,7 @@ Triggered by a maintainer's review or PR comment starting with `/bug-fixer`, or 
 }
 ```
 
-The publish job re-reads the review threads and accepts replies only in the triggering review and in open threads started by a maintainer or the QA agent; it posts the replies, resolves the threads whose reply has `resolve: true`, posts one summary comment (with a hidden round marker in `auto` mode), applies the patch with the same path and size rules as implement, pushes to the PR branch, dispatches CI again, and, if the PR has `agent/auto-fix`, schedules another auto-fix check.
+The publish job re-reads the review threads and accepts replies only in the triggering review and in open threads started by a maintainer or the QA agent; it posts the replies and the summary together as one review (a pending review filled with GraphQL `addPullRequestReviewThreadReply`, then submitted with the summary as its body and a hidden round marker in `auto` mode), so each round is a single timeline entry; it then resolves the threads whose reply has `resolve: true`, applies the patch with the same path and size rules as implement, pushes to the PR branch, dispatches CI again, and, if the PR has `agent/auto-fix`, schedules another auto-fix check.
 
 #### Review threads, QA findings and thread resolution
 

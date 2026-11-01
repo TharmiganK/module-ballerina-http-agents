@@ -8,12 +8,16 @@ on:
     types: [created]
   pull_request_review:
     types: [submitted]
-  # Dispatched by agent-auto-fix.yml for PRs labelled agent/auto-fix once reviewers have gone quiet.
+  # Dispatched by agent-auto-fix.yml (pr) for PRs labelled agent/auto-fix once reviewers have gone quiet,
+  # and by the investigate publish step (issue) for each sub-issue of a split issue.
   workflow_dispatch:
     inputs:
       pr:
         description: Agent PR number whose open review threads should be addressed
-        required: true
+        required: false
+      issue:
+        description: Issue to investigate
+        required: false
 
 permissions: {}
 
@@ -62,20 +66,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           DISPATCH_PR: ${{ inputs.pr }}
+          DISPATCH_ISSUE: ${{ inputs.issue }}
         run: |
           set -euo pipefail
           ev="$GITHUB_EVENT_PATH"
           has() { jq -e --arg l "$1" '[(.issue // .pull_request).labels[].name] | index($l)' "$ev" > /dev/null; }
           command_given() { [[ "$(jq -r "$1 // \"\" | split(\"\\n\")[0] | split(\" \")[0] | gsub(\"\\\\s\"; \"\")" "$ev")" == /bug-fixer ]]; }
           # Issues carry a single agent/* state label; trigger labels are consumed when a run starts.
-          STATES=(agent/investigate agent/investigating agent/plan-ready agent/needs-info agent/analysed agent/approved agent/implementing agent/pr-open agent/failed)
+          STATES=(agent/investigate agent/investigating agent/plan-ready agent/needs-info agent/analysed agent/split agent/approved agent/implementing agent/pr-open agent/failed)
           label() { gh api "repos/$REPO/issues/$number/labels" -f "labels[]=$1" > /dev/null; }
           unlabel() { for l in "$@"; do gh api -X DELETE "repos/$REPO/issues/$number/labels/$(jq -rn --arg s "$l" '$s|@uri')" > /dev/null 2>&1 || true; done; }
 
           phase="" ref="" review_id="" comment_id="" mode=""
           if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
-            number="$DISPATCH_PR"
-            [[ "$number" =~ ^[0-9]+$ ]] || { echo "::error::Invalid PR number"; exit 1; }
+            number="${DISPATCH_ISSUE:-$DISPATCH_PR}"
+            [[ "$number" =~ ^[0-9]+$ ]] || { echo "::error::Pass a numeric pr or issue input"; exit 1; }
+            has() { gh api "repos/$REPO/issues/$number" --jq '[.labels[].name]' | jq -e --arg l "$1" 'index($l)' > /dev/null; }
           else
             number=$(jq -r '(.issue // .pull_request).number' "$ev")
           fi
@@ -125,20 +131,30 @@ jobs:
               fi
               ;;
             workflow_dispatch)
-              pr=$(gh pr view "$number" --repo "$REPO" --json headRefName,state,labels)
-              ref=$(jq -r .headRefName <<< "$pr")
-              if [[ "$(jq -r .state <<< "$pr")" == OPEN && "$ref" =~ ^agent/issue-([0-9]+)$ ]] \
-                 && jq -e '[.labels[].name] | index("agent/auto-fix")' <<< "$pr" > /dev/null; then
-                issue="${BASH_REMATCH[1]}"
-                actionable=$(python3 .github/scripts/agent/pr-threads.py "$REPO" "$number" | jq '[.[] | select(.actionable)] | length')
-                if (( actionable > 0 )); then
-                  phase=review
-                  mode=auto
+              if [[ -n "$DISPATCH_ISSUE" ]]; then
+                if has agent/investigating || has agent/implementing || has agent/pr-open; then
+                  echo "::notice::#$number already has an agent run in progress or an open PR"
                 else
-                  echo "::notice::No unaddressed review threads on #$number"
+                  phase=investigate
+                  unlabel "${STATES[@]}"
+                  label agent/investigating
                 fi
               else
-                echo "::notice::#$number is not an open agent PR labelled agent/auto-fix"
+                pr=$(gh pr view "$number" --repo "$REPO" --json headRefName,state,labels)
+                ref=$(jq -r .headRefName <<< "$pr")
+                if [[ "$(jq -r .state <<< "$pr")" == OPEN && "$ref" =~ ^agent/issue-([0-9]+)$ ]] \
+                   && jq -e '[.labels[].name] | index("agent/auto-fix")' <<< "$pr" > /dev/null; then
+                  issue="${BASH_REMATCH[1]}"
+                  actionable=$(python3 .github/scripts/agent/pr-threads.py "$REPO" "$number" | jq '[.[] | select(.actionable)] | length')
+                  if (( actionable > 0 )); then
+                    phase=review
+                    mode=auto
+                  else
+                    echo "::notice::No unaddressed review threads on #$number"
+                  fi
+                else
+                  echo "::notice::#$number is not an open agent PR labelled agent/auto-fix"
+                fi
               fi
               ;;
             pull_request_review)
@@ -328,6 +344,7 @@ jobs:
     permissions:
       contents: read
       issues: write
+      actions: write
     env:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}

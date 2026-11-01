@@ -63,6 +63,7 @@ case "$PHASE" in
     pr=$(gh api "repos/$REPO/pulls/$NUMBER")
     conversation=$(paginate "repos/$REPO/issues/$NUMBER/comments")
     all_review_comments=$(paginate "repos/$REPO/pulls/$NUMBER/comments")
+    reviews=$(paginate "repos/$REPO/pulls/$NUMBER/reviews")
     threads=$(python3 "$HERE/pr-threads.py" "$REPO" "$NUMBER")
     if [[ "${MODE:-}" == auto ]]; then
       trigger='{"kind": "auto", "body": "", "comments": []}'
@@ -79,7 +80,7 @@ case "$PHASE" in
         {kind: "comment", id: $c.id, author: $c.user.login, trusted: ($c | trusted), body: ($c.body // ""), comments: []}')
     fi
     jq -n --argjson pr "$pr" --argjson trigger "$trigger" --argjson conv "$conversation" \
-          --argjson rc "$all_review_comments" --argjson threads "$threads" "$TRUSTED"'
+          --argjson rc "$all_review_comments" --argjson reviews "$reviews" --argjson threads "$threads" "$TRUSTED"'
       {
         number: $pr.number, title: $pr.title, head: $pr.head.ref, body: ($pr.body // ""),
         trigger: $trigger,
@@ -87,6 +88,8 @@ case "$PHASE" in
                        | {thread_id, source, actionable, outdated, path, line,
                           comments: [.comments[] | {id, author, created_at, body}]}],
         conversation: [$conv[] | {id, author: .user.login, trusted: trusted, created_at, body}],
+        reviews: [$reviews[] | select((.body // "") != "")
+                  | {id, author: .user.login, trusted: trusted, state, submitted_at, body}],
         all_review_comments: [$rc[] | {id, author: .user.login, trusted: trusted, path, line, in_reply_to_id, created_at, body}]
       }' > "$OUT/thread.json"
     issue_number=$(jq -r '.head | capture("^agent/issue-(?<n>[0-9]+)$").n // empty' "$OUT/thread.json")

@@ -367,7 +367,7 @@ jobs:
             echo
             if [[ "$AGENT_RESULT" != success ]]; then
               echo "> [!WARNING]"
-              echo "> The search did not complete for every generated scope unit, so the result below is partial. See the workflow run, then add \`agent/find-similar\` again to retry."
+              echo "> The search did not finish in every area, so the result below is partial. See the workflow run, then add \`agent/find-similar\` again to retry."
               echo
             fi
             if [[ "$(jq '.filed | length' "$report")" != 0 ]]; then
@@ -388,7 +388,11 @@ jobs:
               echo "</details>"
             fi
             echo
-            echo "What was examined is in the run report on the \`agent-state\` branch (\`analyser/reports/*-run${RUN_NUMBER}.md\`)."
+            report_url=$(gh api "repos/$REPO/contents/analyser/reports?ref=agent-state" \
+              --jq ".[] | select(.name | endswith(\"-similar-${SEED/:/-}-run${RUN_NUMBER}.md\")) | .html_url" 2> /dev/null || true)
+            if [[ -n "$report_url" ]]; then
+              echo "[What was examined]($report_url)"
+            fi
             echo
             echo "---"
             echo "<sub>Posted by the weekly analyser in find-similar mode · [workflow run]($RUN_URL)</sub>"

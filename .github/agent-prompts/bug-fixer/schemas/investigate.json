@@ -12,7 +12,8 @@
       "enum": [
         "plan-ready",
         "needs-info",
-        "analysed"
+        "analysed",
+        "split"
       ]
     },
     "comment": {
@@ -34,8 +35,43 @@
         "bug",
         "improvement",
         "feature",
-        "question"
+        "question",
+        "mixed"
       ]
+    },
+    "parts": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "classification",
+          "title",
+          "body"
+        ],
+        "properties": {
+          "classification": {
+            "type": "string",
+            "enum": [
+              "bug",
+              "improvement",
+              "feature"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 120
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000
+          }
+        }
+      }
     }
   }
 }

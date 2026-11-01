@@ -11,6 +11,10 @@ Decide `classification`:
 - `feature`: new functionality that does not exist yet.
 - `question`: the reporter asks how something works or how to do something, and nothing is broken.
 
+- `mixed`: the issue asks for two or more independent things that would be fixed, decided or released separately, for example a bug plus an unrelated feature request, or two unrelated bugs. See "If it covers several things" below.
+
+An issue that was split from another issue (it starts with _Split from #…_) is never `mixed`. Do not call an issue `mixed` just because the reporter suggests how to fix it, mentions a workaround, or the fix naturally touches a second area: one change that resolves the report is one issue.
+
 If the issue already has a `Type/*` label set by a maintainer (`labels` in the context), follow it unless it is clearly wrong; if you disagree, keep their classification and explain your view in a short `> [!NOTE]` at the top of the comment. When behaviour contradicts the spec or the API docs, it is a `bug` even if the reporter calls it a feature request. When in doubt between `bug` and `improvement`, try to reproduce: a failing test against documented behaviour makes it a bug.
 
 ## If it is a bug
@@ -104,6 +108,30 @@ Output: `classification`: `improvement` or `feature`; `outcome`: `analysed`; `co
 ```
 
 Do not write a `## Plan v` heading for these: implementation of proposals is decided by maintainers.
+
+## If it covers several things
+
+Do not investigate or reproduce anything in this run, and do not write code or tests. Split the issue instead; the workflow opens one sub-issue per part, links each to this issue and starts a separate investigation on each, so bugs get a verified reproduction and plan, and improvements and features get an analysis and proposal.
+
+Output: `classification`: `mixed`; `outcome`: `split`; `parts`: 2 to 5 entries, each with:
+
+- `classification`: `bug`, `improvement` or `feature`.
+- `title`: a specific issue title for that part alone.
+- `body`: a self-contained issue description for that part: the reporter's words, code samples, versions and environment that concern it (quote them, do not paraphrase code), and what is expected. A reader must not need the parent issue to understand it. Do not add a link to the parent; the workflow adds it.
+
+`comment`: a short note for the parent issue:
+
+```markdown
+## Split
+
+This issue asks for <n> separate things, so I split it into sub-issues that can be investigated and closed independently:
+
+| Part | Type | Why separate |
+|---|---|---|
+| <title> | Bug / Improvement / New feature | <one line> |
+```
+
+Do not list issue numbers; the workflow adds them.
 
 ## If it is a question
 

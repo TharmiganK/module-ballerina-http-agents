@@ -146,13 +146,14 @@ jobs:
           set -euo pipefail
           gh workflow run agent-weekly-analyser.yml --repo "$REPO" -f custom_scopes="$SCOPES" -f seed="$SEED"
           {
-            echo "Searching for defects similar to this one in $(jq length <<< "$SCOPES") generated scope unit(s):"
+            n=$(jq length <<< "$SCOPES")
+            echo "Looking for the same mistake in $n $( ((n == 1)) && echo area || echo areas) of the module:"
             echo
-            jq -r '.[] | "- `\(.id)`: \(.description)"' <<< "$SCOPES"
+            jq -r '.[] | "- \(.description)"' <<< "$SCOPES"
             echo
             echo "**Pattern:** $(jq -r '.[0].pattern.summary' <<< "$SCOPES")"
             echo
-            echo "Results will be posted here when the analysis finishes."
+            echo "I'll post the results here when the search finishes."
             echo
             echo "---"
             echo "<sub>Posted by the find-similar scoper · [workflow run]($RUN_URL)</sub>"

@@ -1,6 +1,6 @@
 # Phase: review
 
-You are handling review feedback on your fix PR. You are on the PR branch. `agent-context/thread.json` has the PR description, the trigger, the earlier PR conversation, all review comments, and `open_threads`: every unresolved review thread with its `source` (`maintainer`, `qa` for the QA agent, `other` for anyone else including third-party bots) and whether it is `actionable` (not yet answered by you). The linked issue's thread (investigation and plans) is in `agent-context/issue-thread.json`.
+You are handling review feedback on your fix PR. You are on the PR branch. `agent-context/thread.json` has the PR description, the trigger, the earlier PR conversation, `reviews` (review summaries, including yours from earlier rounds), all review comments, and `open_threads`: every unresolved review thread with its `source` (`maintainer`, `qa` for the QA agent, `other` for anyone else including third-party bots) and whether it is `actionable` (not yet answered by you). The linked issue's thread (investigation and plans) is in `agent-context/issue-thread.json`.
 
 ## What to handle
 
@@ -18,6 +18,6 @@ You are handling review feedback on your fix PR. You are on the PR branch. `agen
 ## Output
 
 - `replies`: one entry per thread or inline comment you answer, with `comment_id` (any comment id in that thread; it must belong to the triggering review or to an actionable `maintainer` or `qa` thread), a short `body` saying what you did or why not, and `resolve`: `true` only when the point is fully addressed by your change or answer and needs no further input, `false` when you asked a question or disagree.
-- `summary`: one comment for the PR conversation: what changed, which tests you ran with results, which QA findings you addressed or declined, and answers to points that are not inline comments.
+- `summary`: the body of the review that carries your replies (the replies and the summary are posted together as one review). Write real line breaks, not `\n` escapes. Cover what changed, which tests you ran with results, which QA findings you addressed or declined, and answers to points that are not inline comments.
 - `changed`: `true` if you committed changes.
 - `ci_tests`: as in the implement phase, when `changed` is true.

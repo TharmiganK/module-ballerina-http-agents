@@ -38,7 +38,10 @@ ATTRIBUTION = re.compile(r"^.*Generated with \[Claude Code\].*$\n?", re.MULTILIN
 
 
 def clean(text):
-    return ATTRIBUTION.sub("", re.sub(r"<!--\s*analyser:[^>]*-->", "", text or "")).strip()
+    text = text or ""
+    if "\n" not in text.strip() and "\\n" in text:
+        text = text.replace("\\n", "\n")
+    return ATTRIBUTION.sub("", re.sub(r"<!--\s*analyser:[^>]*-->", "", text)).strip()
 
 
 def slug(key):

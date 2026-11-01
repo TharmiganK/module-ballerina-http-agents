@@ -68,14 +68,14 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$PR" =~ ^[0-9]+$ ]] || { echo "::error::Invalid PR number"; exit 1; }
-          pr=$(gh pr view "$PR" --repo "$REPO" --json state,headRefName,labels,comments)
+          pr=$(gh pr view "$PR" --repo "$REPO" --json state,headRefName,labels,comments,reviews)
           if [[ "$(jq -r .state <<< "$pr")" != OPEN || ! "$(jq -r .headRefName <<< "$pr")" =~ ^agent/issue-[0-9]+$ ]] \
              || ! jq -e '[.labels[].name] | index("agent/auto-fix")' <<< "$pr" > /dev/null; then
             echo "::notice::#$PR is not an open agent PR labelled agent/auto-fix"
             exit 0
           fi
 
-          rounds=$(jq '[.comments[].body | select(test("<!-- bug-fixer:auto-round -->"))] | length' <<< "$pr")
+          rounds=$(jq '[(.comments[], .reviews[]).body | select(test("<!-- bug-fixer:auto-round -->"))] | length' <<< "$pr")
           if (( rounds >= MAX_ROUNDS )); then
             if ! jq -e '[.comments[].body | select(test("<!-- bug-fixer:auto-paused -->"))] | length > 0' <<< "$pr" > /dev/null; then
               printf 'Auto-fix paused after %s automatic rounds. Comment `/bug-fixer` (or review with `/bug-fixer`) to continue.\n\n<!-- bug-fixer:auto-paused -->' \

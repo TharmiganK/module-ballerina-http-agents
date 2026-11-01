@@ -30,7 +30,7 @@ query($owner: String!, $name: String!, $pr: Int!, $cursor: String) {
 }"""
 WRITE_ACCESS = {"OWNER", "MEMBER", "COLLABORATOR"}
 ACTIONS_BOT = {"github-actions", "github-actions[bot]"}
-BUG_FIXER_FOOTER = "Posted by the bug fixer agent"
+BUG_FIXER_MARKERS = ("Posted by the bug fixer agent", "<!-- bug-fixer:reply -->")
 QA_MARKER = "<!-- qa:key="
 
 
@@ -65,7 +65,7 @@ def classify(thread):
         source = "maintainer"
     else:
         source = "other"
-    last_is_bug_fixer = last["author"] in ACTIONS_BOT and BUG_FIXER_FOOTER in last["body"]
+    last_is_bug_fixer = last["author"] in ACTIONS_BOT and any(m in last["body"] for m in BUG_FIXER_MARKERS)
     return {
         "thread_id": thread["id"],
         "resolved": thread["isResolved"],
