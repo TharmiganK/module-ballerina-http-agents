@@ -58,7 +58,11 @@ def main():
         lines += ["", "## Dropped findings"]
         lines += [f"- {d['title']} — {d['reason']}" for d in publish["dropped"]]
     lines += ["", "## Security", f"- {env.get('SEC_FOUND') or 0} found, {env.get('SEC_DELIVERED') or 0} delivered privately"]
-    lines += ["", "## Coverage", "", result.get("coverage") or "_No coverage summary (the agent did not finish)._"]
+    coverage = result.get("coverage") or "_No coverage summary (the agent did not finish)._"
+    if "\n" not in coverage and "\\n" in coverage:
+        # The agent sometimes double-escapes newlines in the structured output.
+        coverage = coverage.replace("\\n", "\n")
+    lines += ["", "## Coverage", "", coverage]
     report = "\n".join(lines) + "\n"
 
     week = now.isocalendar()
