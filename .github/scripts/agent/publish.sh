@@ -48,7 +48,7 @@ post_issue_comment() {
   gh api "repos/$REPO/issues/$1/comments" -F body=@"$2" > /dev/null
 }
 
-# Opens one sub-issue per part of a mixed issue, links it to the parent and starts an investigation on each.
+# Opens one sub-issue per part of a mixed issue, links it to the parent and starts an analysis on each.
 split_issue() {
   local count i part title kind type_label child child_id existing
   local -a carry children args
@@ -91,15 +91,15 @@ split_issue() {
     printf -- '- #%s (%s)\n' "$child" "${type_label#Type/}" >> comment.md
   done
   (( ${#children[@]} > 0 )) || die "Every part already exists as a sub-issue"
-  printf '\nEach sub-issue is investigated on its own: bugs get a reproduction and a fix plan to approve, improvements and features get an analysis and a proposal.' >> comment.md
+  printf '\nEach sub-issue is analysed on its own: bugs get a reproduction and a fix plan to approve, improvements and features get an analysis and a proposal.' >> comment.md
   footer >> comment.md
   post_issue_comment "$NUMBER" comment.md
   remove_labels agent/investigating agent/plan-ready agent/needs-info agent/analysed agent/failed
   add_labels agent/split
-  # Labels added with GITHUB_TOKEN start no workflow, so each investigation is dispatched explicitly.
+  # Labels added with GITHUB_TOKEN start no workflow, so each analysis is dispatched explicitly.
   for child in "${children[@]}"; do
     gh workflow run agent-issue-analyser.yml --repo "$REPO" -f issue="$child" \
-      || echo "::warning::Could not start the investigation of #$child; add agent/investigate to it again"
+      || echo "::warning::Could not start the analysis of #$child; add agent/investigate to it again"
   done
 }
 

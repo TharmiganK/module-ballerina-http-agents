@@ -10,7 +10,7 @@ _Status_: Implemented for PoC
 
 A GitHub Actions based AI agent that reviews pull requests for behaviour, spec compliance and test coverage. It reads the change, its tests and the relevant parts of `docs/spec/spec.md`, looks for concrete bugs, spec deviations, stale spec text and missing test cases, and posts a single PR review: inline comments anchored to diff lines, and one summary for points that cannot be anchored. Every bug or spec-deviation claim is backed by a reproduction test that the workflow re-runs; anything it cannot reproduce is posted as a question.
 
-It is the second agent of the PoC, after the [bug fixer](bug-fixer-agent.md), and reuses its infrastructure: the propose-then-publish split, `setup-build`, `run-tests.sh` and reproduction verification.
+It is the second agent of the PoC, after the issue agents ([issue analyser and bug fixer](issue-agents.md)), and reuses their infrastructure: the propose-then-publish split, `setup-build`, `run-tests.sh` and reproduction verification.
 
 ## Goals
 
@@ -24,7 +24,7 @@ It is the second agent of the PoC, after the [bug fixer](bug-fixer-agent.md), an
 
 - Replacing CI. The agent runs tests to investigate suspected bugs, not to validate the PR as a whole.
 - Pushing fixes. Suggested fixes are described or given as GitHub suggestion blocks; the author applies them.
-- Security review. That belongs to the weekly analyser's restricted channel.
+- Security review. That belongs to the [defect scanner](defect-scanner.md)'s restricted channel.
 
 ## Triggers
 
@@ -34,17 +34,17 @@ It is the second agent of the PoC, after the [bug fixer](bug-fixer-agent.md), an
 | `issue_comment: [created]` on a PR | Comment body's first line is exactly `/qa`; author is not a bot and has write access | On-demand review of the current head. The gate reacts with 👀 so the requester sees it was picked up. |
 | `workflow_dispatch` with input `pr` | Dispatched by the bug fixer's `publish-code` job after opening a PR | Agent PRs are opened with `GITHUB_TOKEN` and do not trigger `pull_request`; this gives them an automatic second review. |
 
-The write-access check is the action's built-in check plus the same `author_association` pre-filter as the bug fixer. Reviews posted by the QA agent use `GITHUB_TOKEN`, so they do not trigger the bug fixer's review phase on agent PRs; a maintainer decides which QA findings the bug fixer should act on by reviewing the PR themselves.
+The write-access check is the action's built-in check plus the same `author_association` pre-filter as the issue agents. Reviews posted by the QA agent use `GITHUB_TOKEN`, so they do not trigger the bug fixer's review phase on agent PRs; a maintainer decides which QA findings the bug fixer should act on by reviewing the PR themselves.
 
 Concurrency: `group: qa-<pr>` with `cancel-in-progress: true`, so a newer `/qa` replaces a running one.
 
-On agent PRs the bug fixer answers the QA agent's threads (replying and resolving them) when a maintainer asks with `/bug-fixer`, or automatically when the PR has `agent/auto-fix`; since a review posted with `GITHUB_TOKEN` triggers no workflows, the QA publish job dispatches the auto-fix scheduler itself on such PRs.
+On agent PRs the bug fixer answers the QA agent's threads (replying and resolving them) when a maintainer asks with `/agent`, or automatically when the PR has `agent/auto-fix`; since a review posted with `GITHUB_TOKEN` triggers no workflows, the QA publish job dispatches the auto-fix scheduler itself on such PRs.
 
 ## Design
 
 ### Jobs
 
-Same propose-then-publish split as the bug fixer, in `.github/workflows/agent-qa.yml`:
+Same propose-then-publish split as the issue agents, in `.github/workflows/agent-qa.yml`:
 
 | Job | Permissions | What it does |
 |---|---|---|
@@ -55,7 +55,7 @@ Same propose-then-publish split as the bug fixer, in `.github/workflows/agent-qa
 
 ### Context
 
-`build-context.sh` gains a `qa` phase that writes `agent-context/pr.json`: title, body, author and trust flag, base and head SHAs, changed files with their patches, linked issues, and the bodies of earlier QA reviews on the PR (for dedup). The full diff is also written to `agent-context/pr.diff`. The PR author is untrusted unless they have write access, and the same trust rules as the bug fixer apply: the PR text is data, never instructions.
+`build-context.sh` gains a `qa` phase that writes `agent-context/pr.json`: title, body, author and trust flag, base and head SHAs, changed files with their patches, linked issues, and the bodies of earlier QA reviews on the PR (for dedup). The full diff is also written to `agent-context/pr.diff`. The PR author is untrusted unless they have write access, and the same trust rules as the issue agents apply: the PR text is data, never instructions.
 
 ### Agent instructions (summary)
 
@@ -116,7 +116,7 @@ Style, naming, formatting and refactoring suggestions are out of scope and will 
 
 ### Reproduction verification
 
-`.github/scripts/agent/verify-findings.py` (shared with the weekly analyser) handles a list of `(test_package, group, test_filter)` entries (the bug fixer's single-reproduction `verify-repro.sh` is left unchanged during its validation; the two can be merged later). After Claude finishes, the agent job re-runs the group of each `bug` finding and each `spec` deviation in the agent's workspace and records `reproduced`, `not-reproduced` or `not-run` per finding in `agent-output/repro.json`. Several groups in the same package run in one `bal test` invocation (`--groups qa_12_1,qa_12_2`), so verification costs one test-package run per package rather than per finding. Results are mapped back to findings through the test function names declared in each finding's `test_code`; a finding counts as reproduced only if one of its own test functions failed.
+`.github/scripts/agent/verify-findings.py` (shared with the defect scanner) handles a list of `(test_package, group, test_filter)` entries (the issue agents' single-reproduction `verify-repro.sh` is left unchanged during their validation; the two can be merged later). After Claude finishes, the agent job re-runs the group of each `bug` finding and each `spec` deviation in the agent's workspace and records `reproduced`, `not-reproduced` or `not-run` per finding in `agent-output/repro.json`. Several groups in the same package run in one `bal test` invocation (`--groups qa_12_1,qa_12_2`), so verification costs one test-package run per package rather than per finding. Results are mapped back to findings through the test function names declared in each finding's `test_code`; a finding counts as reproduced only if one of its own test functions failed.
 
 The publish job:
 
@@ -157,7 +157,7 @@ Everything is posted as one review (`POST /repos/{owner}/{repo}/pulls/{n}/review
 
 ### Tool allowlist
 
-Same as the bug fixer's investigate phase: `Read`, `Glob`, `Grep`, `Edit`, `Write` (reproduction tests and `agent-scratch/` only, by prompt), `run-tests.sh`, the build-local `bal`, read-only `git` and `gh`. No commits, no pushes, no GitHub writes.
+Same as the issue analyser's analyse phase: `Read`, `Glob`, `Grep`, `Edit`, `Write` (reproduction tests and `agent-scratch/` only, by prompt), `run-tests.sh`, the build-local `bal`, read-only `git` and `gh`. No commits, no pushes, no GitHub writes.
 
 ### Limits and estimates
 
@@ -192,7 +192,7 @@ The PoC repository has no forks. For upstream, the design keeps fork PRs safe by
 
 - False positives cost reviewer attention; the cap, the reproduction rule and dedup limit them, and the validation run measures them.
 - A review of the merge ref can go stale after new pushes; the review states the head SHA it reviewed.
-- Reviewing agent PRs with the same model may share blind spots with the bug fixer.
+- Reviewing agent PRs with the same model may share blind spots with the issue analyser and bug fixer.
 - Line anchoring depends on the diff at publish time; a push between the agent and publish jobs can move lines. The publish job re-fetches the PR and moves stale anchors into the summary if the head SHA changed.
 
 ## Validation plan

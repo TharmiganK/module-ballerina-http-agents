@@ -1,4 +1,4 @@
-# Proposal: Weekly Analyser Agent
+# Proposal: Defect scanner
 
 _Owners_: @TharmiganK  
 _Reviewers_: @TharmiganK  
@@ -8,9 +8,9 @@ _Status_: Implemented for PoC
 
 ## Summary
 
-A scheduled AI agent that analyses one slice of the module each week for bugs, internal inconsistencies, specification problems, spec/implementation deviations and security vulnerabilities. It files a small number of verified, deduplicated issues, routes security findings to a private channel, and records what it covered so that the whole module is analysed over successive weeks.
+An AI agent that, in its weekly scan mode, analyses one slice of the module each week for bugs, internal inconsistencies, specification problems, spec/implementation deviations and security vulnerabilities. It files a small number of verified, deduplicated issues, routes security findings to a private channel, and records what it covered so that the whole module is analysed over successive weeks. In its [find-similar mode](#find-similar-mode) it hunts for other occurrences of a known defect.
 
-It is the third agent of the PoC, after the [bug fixer](bug-fixer-agent.md) and the [PR QA agent](qa-agent.md), and reuses their infrastructure: the read-only agent job and deterministic publish job, `setup-build`, `run-tests.sh`, and workflow-side reproduction verification.
+It was called the weekly analyser until it was renamed to avoid a clash with the [issue analyser](issue-agents.md). It is the third agent of the PoC, after the issue agents ([issue analyser and bug fixer](issue-agents.md)) and the [PR QA agent](qa-agent.md), and reuses their infrastructure: the read-only agent job and deterministic publish job, `setup-build`, `run-tests.sh`, and workflow-side reproduction verification.
 
 ## Goals
 
@@ -23,7 +23,7 @@ It is the third agent of the PoC, after the [bug fixer](bug-fixer-agent.md) and 
 
 ## Non-goals
 
-- Fixing anything. Filed bugs can be handed to the bug fixer by a maintainer adding `agent/investigate`.
+- Fixing anything. Filed bugs enter the normal issue flow: a maintainer adds `agent/investigate` for the issue analyser, then approves its plan for the bug fixer.
 - Style, refactoring or performance work without a demonstrable defect.
 - Analysing dependencies (Netty, stdlib modules) beyond how this module uses them.
 
@@ -40,7 +40,7 @@ Both are only startable by users with write access, so no actor check is needed 
 
 ### Scope units
 
-The module is too large for one run, so it is divided into scope units in `.github/agent-prompts/analyser/scopes.json`. Each unit bundles the spec sections, Ballerina files, native packages and test packages for one feature area, so that the agent can compare spec, implementation and tests for the same behaviour in one run:
+The module is too large for one run, so it is divided into scope units in `.github/agent-prompts/defect-scanner/scopes.json`. Each unit bundles the spec sections, Ballerina files, native packages and test packages for one feature area, so that the agent can compare spec, implementation and tests for the same behaviour in one run:
 
 | Unit | Spec sections | Ballerina layer | Native layer | Tests |
 |---|---|---|---|---|
@@ -65,7 +65,7 @@ The exact paths are maintained in `scopes.json`; this table is the initial cut. 
 
 ### Selection
 
-The plan job picks `ANALYSER_UNITS_PER_RUN` units (repository variable, default 4), unless `scope` lists units (comma-separated):
+The plan job picks `SCANNER_UNITS_PER_RUN` units (repository variable, default 4), unless `scope` lists units (comma-separated):
 
 1. Units never analysed come first, in table order.
 2. Then the units with the highest score `weeks since last analysis + 4 × (files in the unit changed on master since its last analysis > 0)`, so recently changed code is re-analysed sooner.
@@ -74,7 +74,7 @@ The units are analysed in parallel by a matrix job (one runner per unit, `max-pa
 
 ### State
 
-State lives in `analyser/state.json` on an orphan branch `agent-state`, which nothing else uses. It records, per unit, the last analysis date, the `master` SHA analysed, and the run URL; and per run, a report file `analyser/reports/<yyyy>-W<ww>-run<n>.md` with a section per unit. A unit is only marked as analysed when its agent job completed.
+State lives in `defect-scanner/state.json` on an orphan branch `agent-state`, which nothing else uses. It records, per unit, the last analysis date, the `master` SHA analysed, and the run URL; and per run, a report file `defect-scanner/reports/<yyyy>-W<ww>-run<n>.md` with a section per unit. A unit is only marked as analysed when its agent job completed.
 
 The Actions cache was rejected because entries unused for 7 days are evicted, which is exactly the weekly cadence; repository variables were rejected because writing them needs an admin-scoped token. A branch is durable, auditable (git history), and writable with `GITHUB_TOKEN`.
 
@@ -82,7 +82,7 @@ The Actions cache was rejected because entries unused for 7 days are evicted, wh
 
 | Category | When | Evidence required | Labels |
 |---|---|---|---|
-| **Bug** | The implementation is wrong regardless of the spec (crash, hang, leak, wrong result, internal inconsistency such as client and service, or HTTP/1.1 and HTTP/2, treating the same input differently), or it contradicts a clear, unambiguous statement in the spec. | A reproduction test in group `analyser_<run>_<k>` that the workflow re-ran and that failed for the claimed reason. | `Type/Bug`, `module/http`, `agent/generated` |
+| **Bug** | The implementation is wrong regardless of the spec (crash, hang, leak, wrong result, internal inconsistency such as client and service, or HTTP/1.1 and HTTP/2, treating the same input differently), or it contradicts a clear, unambiguous statement in the spec. | A reproduction test in group `scanner_<run>_<k>` that the workflow re-ran and that failed for the claimed reason. | `Type/Bug`, `module/http`, `agent/generated` |
 | **Spec issue** | `docs/spec/spec.md` is ambiguous, contradictory, incomplete (behaviour the implementation has but the spec does not describe) or out of date, while the implementation's behaviour is clear and plausible. | Quotes of the spec text with links, and the implementation reference; a test showing actual behaviour when the issue is about behaviour. | `Type/Improvement`, `Area/Spec`, `module/http`, `agent/generated` |
 | **Question** | Spec and implementation disagree, and it is not clear which one is intended (both are plausible, or changing either would break users). | A test asserting the spec's behaviour that the workflow re-ran and that failed, plus the spec quote. Without the failing test, the disagreement is not established and the finding is dropped. | `Type/Question`, `Area/Spec`, `module/http`, `agent/generated` |
 | **Security** | A vulnerability: anything an attacker can use to break confidentiality, integrity or availability (for example request smuggling, header injection, path traversal, unbounded resource use from untrusted input, TLS validation gaps, auth bypass). | A reproduction where safely possible; otherwise a precise code-level argument. | Never filed publicly; see [Security findings](#security-findings). |
@@ -93,7 +93,7 @@ Tie-breakers: a suspected bug that does not reproduce is dropped, not filed as a
 
 ### Jobs
 
-`.github/workflows/agent-weekly-analyser.yml`:
+`.github/workflows/agent-defect-scanner.yml` ("Agent - Defect scanner"; run names `Weekly scan`, `Scan <units>` or `Find similar to <seed>`):
 
 | Job | Permissions | What it does |
 |---|---|---|
@@ -115,7 +115,7 @@ The plan job writes:
 1. Read the unit's spec sections, then its implementation across layers, then its tests, using `docs/architecture.md`.
 2. Look for the categories above, prioritising user-visible behaviour on untested paths, client/service and HTTP/1.1/HTTP/2 inconsistencies, error handling, and limits on untrusted input.
 3. Check every candidate against `known-issues.json` and drop it if an existing issue (open or closed) covers it.
-4. For bugs and questions, write and run reproduction tests (group `analyser_<run>_<k>`, new ports), keeping them only if they fail for the claimed reason.
+4. For bugs and questions, write and run reproduction tests (group `scanner_<run>_<k>`, new ports), keeping them only if they fail for the claimed reason.
 5. Return at most 8 public findings and at most 3 security findings, most important first, plus a coverage summary of what was examined.
 
 Allowed tools are the same as the QA agent's: read and edit tools, `run-tests.sh`, the build-local `bal`, read-only `git` and `gh`. No GitHub writes.
@@ -180,8 +180,8 @@ Allowed tools are the same as the QA agent's: read and edit tools, `run-tests.sh
 ### Verification, dedup and caps
 
 - **Verification.** `verify-findings.py`, shared with the QA agent, handles bug and question findings here and re-runs all reproduction groups, one `bal test` per package. Bugs and questions that do not reproduce are dropped and listed in the run report with the reason.
-- **Dedup.** Each filed issue carries a hidden fingerprint `<!-- analyser:fp=<unit>/<key> -->`. Before filing, the publish job reads the bodies of all `agent/generated` issues, open and closed, and skips findings whose fingerprint is already there; this catches findings the agent re-discovers under the same key. The agent's own semantic check against `known-issues.json` catches findings reported by people.
-- **Caps.** At most `ANALYSER_MAX_ISSUES` (default 6) public issues per run across all units: verified bugs first, then unit and priority order; the rest are listed in the run report with their unit so they are not lost. At most 3 security findings per run across all units, most severe first. Only units whose agent job completed contribute findings.
+- **Dedup.** Each filed issue carries a hidden fingerprint `<!-- scanner:fp=<unit>/<key> -->` (the publish job also accepts the `analyser:fp=` prefix written before the rename). Before filing, the publish job reads the bodies of all `agent/generated` issues, open and closed, and skips findings whose fingerprint is already there; this catches findings the agent re-discovers under the same key. The agent's own semantic check against `known-issues.json` catches findings reported by people.
+- **Caps.** At most `SCANNER_MAX_ISSUES` (default 6) public issues per run across all units: verified bugs first, then unit and priority order; the rest are listed in the run report with their unit so they are not lost. At most 3 security findings per run across all units, most severe first. Only units whose agent job completed contribute findings.
 
 ### Issue format
 
@@ -203,8 +203,8 @@ Allowed tools are the same as the QA agent's: read and edit tools, `run-tests.sh
 <for bugs: where the fix likely goes; for spec issues: proposed spec text; for questions: the options and their impact>
 
 ---
-Found by the weekly analyser in scope `<unit>` at `<sha>` · [run](<url>)
-<!-- analyser:fp=<unit>/<key> -->
+Found by the defect scanner in scope `<unit>` at `<sha>` · [workflow run](<url>)
+<!-- scanner:fp=<unit>/<key> -->
 ```
 
 ### Run report
@@ -226,10 +226,10 @@ Delivery options (decision needed before implementation):
 
 Decision: **A** for upstream. Draft advisories are not available in private repositories (the advisories API returns 404 for this private mirror while it works for the public upstream repository), so the channel is switchable through the repository variable `SECURITY_CHANNEL`. The repository used `issue` while private and uses `advisory` now that it is public:
 
-- `advisory`: draft repository security advisory per finding, created with the `SECURITY_ADVISORY_TOKEN` secret (a fine-grained PAT or App token with "Repository security advisories: write"), used only by `publish-security`; dedup by a fingerprint in the advisory description.
-- `issue`: an issue labelled `Area/Security` (plus `module/http`, `agent/generated`), titled `[Security] ...`, with a note to move it to a security advisory before the finding or the repository becomes public. Used in this private PoC repository; `analyser-security.py` refuses this channel if the repository is public, since `Area/Security` is a public label upstream. None of the Security tab's features work here: draft advisories and private vulnerability reporting are public-repository features, and code scanning alerts on private repositories need GitHub Advanced Security.
+- `advisory`: draft repository security advisory per finding, created with the `SECURITY_ADVISORY_TOKEN` secret (a fine-grained PAT or App token with "Repository security advisories: write"), used only by `publish-security`; dedup by a fingerprint `<!-- scanner:sec=<unit>/<key> -->` in the advisory description (the old `analyser:sec=` prefix is still recognised).
+- `issue`: an issue labelled `Area/Security` (plus `module/http`, `agent/generated`), titled `[Security] ...`, with a note to move it to a security advisory before the finding or the repository becomes public. Used in this private PoC repository; `scanner-security.py` refuses this channel if the repository is public, since `Area/Security` is a public label upstream. None of the Security tab's features work here: draft advisories and private vulnerability reporting are public-repository features, and code scanning alerts on private repositories need GitHub Advanced Security.
 
-Transfer between jobs: the agent job splits the structured output into the public `analyser-output` artifact (without `security`) and an `analyser-security` artifact (3-day retention). `security-transfer.sh` encrypts the findings with a random per-run AES-256 key wrapped with the RSA public key in the repository variable `SECURITY_TRANSFER_PUBLIC_KEY` (OAEP, SHA-256), so the agent job needs no secret; only `publish-security` holds the private key (`SECURITY_TRANSFER_PRIVATE_KEY` secret) and decrypts. Without a public key, plaintext transfer is allowed only in a private repository; in a public repository the job deletes the plaintext and fails. Neither the logs, the step summary nor the run report contain security content beyond counts.
+Transfer between jobs: the agent job splits the structured output into the public `scanner-output-<unit>` artifact (without `security`) and a `scanner-security-<unit>` artifact (3-day retention). `security-transfer.sh` encrypts the findings with a random per-run AES-256 key wrapped with the RSA public key in the repository variable `SECURITY_TRANSFER_PUBLIC_KEY` (OAEP, SHA-256), so the agent job needs no secret; only `publish-security` holds the private key (`SECURITY_TRANSFER_PRIVATE_KEY` secret) and decrypts. Without a public key, plaintext transfer is allowed only in a private repository; in a public repository the job deletes the plaintext and fails. Neither the logs, the step summary nor the run report contain security content beyond counts.
 
 ## Limits and estimates
 
@@ -238,18 +238,18 @@ Transfer between jobs: the agent job splits the structured output into the publi
 | `timeout-minutes` (agent job) | 120 |
 | `--max-turns` | 150 |
 | Model | `claude-opus-5-5` |
-| Units per run | `ANALYSER_UNITS_PER_RUN`, default 4, in parallel |
-| Public issues per run | ≤ `ANALYSER_MAX_ISSUES` across all units (code default 6; this repository sets 32, so every verified finding is filed) |
+| Units per run | `SCANNER_UNITS_PER_RUN`, default 4, in parallel |
+| Public issues per run | ≤ `SCANNER_MAX_ISSUES` across all units (code default 6; this repository sets 32, so every verified finding is filed) |
 | Security findings per run | ≤ 3, across all units |
 | Measured per unit | 5–9 minutes of agent job time, 28–59 turns and $1.19–2.14 per unit in the PoC runs ([report](poc-report.md)); runner minutes are free on public repositories |
 
 ## Find-similar mode
 
-A maintainer can ask for a targeted search by labelling an issue or a pull request with `agent/find-similar` (`.github/workflows/agent-find-similar.yml`). The label is consumed when the search starts.
+A maintainer can ask for a targeted search by labelling an issue or a pull request with `agent/find-similar` (`.github/workflows/agent-find-similar.yml`, "Agent - Find similar defects", run name `Find defects like #<n>`). The label is consumed when the search starts. Its comments end with "Posted by the defect scanner (find similar)", and the issues it files say "Found by the defect scanner (find similar)".
 
-1. **Scope generation.** A read-only scoper agent reads the seed (for a PR: the fix diff and linked issues; for an issue: the report and the bug fixer's investigation) and returns the defect pattern (summary, root cause, fix) and 1–3 scope units in the catalogue's shape, plus search hints and the seed's own locations to exclude. It reasons about where else the module makes the same assumption (client and service side, HTTP/1.1 and HTTP/2, other payload types, headers, parsers and builders) but does not verify anything.
+1. **Scope generation.** A read-only scoper agent reads the seed (for a PR: the fix diff and linked issues; for an issue: the report and the issue analyser's comment, if any) and returns the defect pattern (summary, root cause, fix) and 1–3 scope units in the catalogue's shape, plus search hints and the seed's own locations to exclude. It reasons about where else the module makes the same assumption (client and service side, HTTP/1.1 and HTTP/2, other payload types, headers, parsers and builders) but does not verify anything.
 2. **Validation.** `find-similar-scope.py` drops paths that do not exist and unknown test packages, prefixes unit ids with the seed (`similar-pr9-...`) so fingerprints never collide with catalogue units, and fails if no usable unit remains.
-3. **Analysis.** The analyser is dispatched with the generated units (`custom_scopes`, `seed`). It runs them in parallel with the prompt's find-similar section: hunt for the same root cause, never report the seed or what its fix covers, verify each occurrence with a reproduction, and list every checked site in the coverage. Publishing, dedup, caps and security handling are the same as weekly runs; issues say which seed they are similar to.
+3. **Analysis.** The defect scanner is dispatched with the generated units (`custom_scopes`, `seed`). It runs them in parallel with the prompt's find-similar section: hunt for the same root cause, never report the seed or what its fix covers, verify each occurrence with a reproduction, and list every checked site in the coverage. Publishing, dedup, caps and security handling are the same as weekly runs; issues say which seed they are similar to.
 4. **Results.** The seed gets one comment when the search starts (pattern and units) and one when it ends (filed issues, dropped candidates with reasons, and the report location). Find-similar runs have their own concurrency group and never advance the weekly rotation.
 
 ## Alternatives considered
@@ -264,7 +264,7 @@ A maintainer can ask for a targeted search by labelling an issue or a pull reque
 
 ## Risks and limitations
 
-- Semantic dedup against human-written issues depends on the agent; a duplicate may slip through. The fingerprint only prevents the analyser from repeating itself.
+- Semantic dedup against human-written issues depends on the agent; a duplicate may slip through. The fingerprint only prevents the defect scanner from repeating itself.
 - One unit per week means a defect in a rarely changed unit may wait up to four months; changed code is prioritised to offset this.
 - Security findings without a safe reproduction rely on the agent's reasoning and need careful human triage.
 - Long runs can hit the turn or time limit before finishing; the coverage summary and run report make partial coverage visible, and the unit is not marked as analysed unless the agent job completed.

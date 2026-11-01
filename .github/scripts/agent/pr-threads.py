@@ -30,7 +30,7 @@ query($owner: String!, $name: String!, $pr: Int!, $cursor: String) {
 }"""
 WRITE_ACCESS = {"OWNER", "MEMBER", "COLLABORATOR"}
 ACTIONS_BOT = {"github-actions", "github-actions[bot]"}
-BUG_FIXER_MARKERS = ("Posted by the bug fixer agent", "<!-- bug-fixer:reply -->")
+BUG_FIXER_MARKERS = ("Posted by the bug fixer", "<!-- bug-fixer:reply -->")
 QA_MARKER = "<!-- qa:key="
 
 
