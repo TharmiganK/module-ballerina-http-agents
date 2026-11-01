@@ -1,0 +1,37 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "findings"],
+  "properties": {
+    "summary": {"type": "string", "minLength": 1, "maxLength": 20000},
+    "findings": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "kind", "title", "body"],
+        "properties": {
+          "key": {"type": "string", "minLength": 3, "maxLength": 60},
+          "kind": {"type": "string", "enum": ["bug", "missing-test", "question"]},
+          "title": {"type": "string", "minLength": 1, "maxLength": 150},
+          "body": {"type": "string", "minLength": 1, "maxLength": 8000},
+          "path": {"type": "string", "maxLength": 300},
+          "line": {"type": "integer", "minimum": 1},
+          "side": {"type": "string", "enum": ["LEFT", "RIGHT"]},
+          "repro": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["test_package", "group", "test_code"],
+            "properties": {
+              "test_package": {"type": "string", "maxLength": 100},
+              "test_filter": {"type": "string", "maxLength": 200},
+              "group": {"type": "string", "maxLength": 40},
+              "test_code": {"type": "string", "minLength": 1, "maxLength": 8000}
+            }
+          }
+        }
+      }
+    }
+  }
+}

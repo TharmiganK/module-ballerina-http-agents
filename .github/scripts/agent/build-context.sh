@@ -2,7 +2,7 @@
 # Writes the issue/PR thread the agent works from into agent-context/, tagging each entry as trusted
 # (author has write access) or untrusted. For the implement phase it also resolves the approved plan.
 #
-# Env: REPO, PHASE (investigate|discuss|implement|review), NUMBER, and for review REVIEW_ID or COMMENT_ID.
+# Env: REPO, PHASE (investigate|discuss|implement|review|qa), NUMBER, and for review REVIEW_ID or COMMENT_ID.
 set -euo pipefail
 
 : "${REPO:?}" "${PHASE:?}" "${NUMBER:?}"
@@ -86,6 +86,28 @@ case "$PHASE" in
     if [[ -n "$issue_number" ]]; then
       issue_thread "$issue_number" > "$OUT/issue-thread.json"
     fi
+    ;;
+
+  qa)
+    pr=$(gh api "repos/$REPO/pulls/$NUMBER")
+    files=$(paginate "repos/$REPO/pulls/$NUMBER/files")
+    previous=$(gh api --paginate "repos/$REPO/pulls/$NUMBER/reviews" \
+      --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | test("<!-- qa:review -->")))' | jq -s '.')
+    previous_comments=$(paginate "repos/$REPO/pulls/$NUMBER/comments" \
+      | jq '[.[] | select(.user.login == "github-actions[bot]" and (.body | test("<!-- qa:key=")))]')
+    linked=$(jq -r '.body // "" | [scan("(?i)(?:fix(?:es|ed)?|close[sd]?|resolve[sd]?) #([0-9]+)")[0]] | unique | .[]' <<< "$pr")
+    jq -n --argjson pr "$pr" --argjson files "$files" --argjson prev "$previous" --argjson prevc "$previous_comments" "$TRUSTED"'
+      {
+        number: $pr.number, title: $pr.title, author: $pr.user.login, trusted: ($pr | trusted),
+        body: ($pr.body // ""), base_sha: $pr.base.sha, head_sha: $pr.head.sha, head_ref: $pr.head.ref,
+        files: [$files[] | {filename, status, additions, deletions}],
+        previous_qa_reviews: [$prev[] | {submitted_at, commit_id, body}],
+        previous_qa_inline_comments: [$prevc[] | {path, line, body}]
+      }' > "$OUT/pr.json"
+    gh pr diff "$NUMBER" --repo "$REPO" > "$OUT/pr.diff"
+    for n in $linked; do
+      issue_thread "$n" > "$OUT/issue-$n.json" || true
+    done
     ;;
 
   *)

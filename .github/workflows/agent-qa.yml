@@ -1,0 +1,228 @@
+name: Agent - QA
+
+# Design: docs/proposals/agents/qa-agent.md
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        required: true
+
+permissions: {}
+
+jobs:
+  gate:
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'pull_request' && !github.event.pull_request.draft)
+      || (github.event_name == 'issue_comment'
+        && github.event.issue.pull_request
+        && github.event.comment.user.type != 'Bot'
+        && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+        && startsWith(github.event.comment.body, '/qa'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      pr: ${{ steps.route.outputs.pr }}
+      ref: ${{ steps.route.outputs.ref }}
+      manual: ${{ steps.route.outputs.manual }}
+    steps:
+      - name: Route
+        id: route
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DISPATCH_PR: ${{ inputs.pr }}
+        run: |
+          set -euo pipefail
+          ev="$GITHUB_EVENT_PATH"
+          manual=false
+          case "$GITHUB_EVENT_NAME" in
+            workflow_dispatch) pr="$DISPATCH_PR" ;;
+            pull_request)      pr=$(jq -r .pull_request.number "$ev") ;;
+            issue_comment)
+              pr=$(jq -r .issue.number "$ev")
+              if [[ "$(jq -r '.comment.body | split("\n")[0] | gsub("^\\s+|\\s+$"; "")' "$ev")" != /qa ]]; then
+                echo "::notice::Comment is not a /qa command"; echo "pr=" >> "$GITHUB_OUTPUT"; exit 0
+              fi
+              manual=true
+              ;;
+          esac
+          [[ "$pr" =~ ^[0-9]+$ ]] || { echo "::error::Invalid PR number"; exit 1; }
+
+          info=$(gh pr view "$pr" --repo "$REPO" --json state,isDraft,labels,mergeable,isCrossRepository,files)
+          skip=""
+          [[ "$(jq -r .state <<< "$info")" == OPEN ]] || skip="PR is not open"
+          if [[ "$manual" == false ]]; then
+            [[ "$(jq -r .isDraft <<< "$info")" == false ]] || skip="PR is a draft"
+            jq -e '[.labels[].name] | index("agent/qa-skip")' <<< "$info" > /dev/null && skip="PR has agent/qa-skip"
+          fi
+          # Fork PRs run their own build logic with secrets; require a maintainer to vouch for build changes.
+          if [[ "$(jq -r .isCrossRepository <<< "$info")" == true ]] \
+             && jq -e '[.files[].path | select(test("(^|/)[^/]*\\.gradle$|^gradle/|^gradlew|^\\.github/|^build-config/"))] | length > 0' <<< "$info" > /dev/null \
+             && ! jq -e '[.labels[].name] | index("agent/qa-trusted")' <<< "$info" > /dev/null; then
+            skip="Fork PR changes build logic; a maintainer must add agent/qa-trusted first"
+          fi
+
+          if [[ -n "$skip" ]]; then
+            echo "::notice::Skipping QA for #$pr: $skip"
+            if [[ "$manual" == true ]]; then
+              gh pr comment "$pr" --repo "$REPO" --body "QA review not started: $skip." > /dev/null
+            fi
+            echo "pr=" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+
+          # Review the PR merged into its base; fall back to the head when it does not merge cleanly.
+          ref="refs/pull/$pr/merge"
+          [[ "$(jq -r .mergeable <<< "$info")" == CONFLICTING ]] && ref="refs/pull/$pr/head"
+          if [[ "$manual" == true ]]; then
+            gh api "repos/$REPO/issues/comments/$(jq -r .comment.id "$ev")/reactions" -f content=eyes > /dev/null || true
+          fi
+          { echo "pr=$pr"; echo "ref=$ref"; echo "manual=$manual"; } >> "$GITHUB_OUTPUT"
+
+  agent:
+    needs: gate
+    if: needs.gate.outputs.pr != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: qa-${{ needs.gate.outputs.pr }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    env:
+      packageUser: ${{ secrets.PACKAGE_USER }}
+      packagePAT: ${{ secrets.PACKAGE_PAT }}
+      PR: ${{ needs.gate.outputs.pr }}
+      REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.gate.outputs.ref }}
+          fetch-depth: 50
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-build
+
+      - name: Build agent context
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PHASE: qa
+          NUMBER: ${{ needs.gate.outputs.pr }}
+        run: .github/scripts/agent/build-context.sh
+
+      - name: Prepare prompt
+        id: prep
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p agent-output
+          head_sha=$(jq -r .head_sha agent-context/pr.json)
+          jq -n --arg pr "$PR" --arg head_sha "$head_sha" '{pr: $pr, head_sha: $head_sha}' > agent-output/meta.json
+          echo "schema=$(jq -c . .github/agent-prompts/qa/schema.json)" >> "$GITHUB_OUTPUT"
+          delim="EOF_$(openssl rand -hex 8)"
+          {
+            echo "prompt<<$delim"
+            cat .github/agent-prompts/qa/prompt.md
+            echo
+            echo "## Run context"
+            echo
+            echo "- Repository: $REPO"
+            echo "- Pull request: #$PR (use $PR wherever the instructions say <pr>)"
+            echo "- PR head commit (for permalinks): $head_sha"
+            echo "- Checked-out commit: $(git rev-parse HEAD)"
+            echo "- Workflow run: $RUN_URL"
+            echo "- Context files: $(ls agent-context | sed 's|^|agent-context/|' | tr '\n' ' ')"
+            echo "$delim"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run Claude
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          # Dispatches from the bug fixer come from GITHUB_TOKEN, whose actor is github-actions[bot].
+          allowed_bots: ${{ github.event_name == 'workflow_dispatch' && 'github-actions' || '' }}
+          prompt: ${{ steps.prep.outputs.prompt }}
+          claude_args: |
+            --model claude-opus-5-5
+            --max-turns 50
+            --allowedTools "Read,Glob,Grep,Edit,Write,Bash(.github/scripts/run-tests.sh:*),Bash(target/ballerina-runtime/bin/bal:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh issue view:*),Bash(gh api:*)"
+            --disallowedTools "Bash(git push:*),Bash(git commit:*),Bash(gh pr comment:*),Bash(gh pr review:*),Bash(gh pr edit:*),Bash(gh issue comment:*),WebFetch,WebSearch"
+            --json-schema '${{ steps.prep.outputs.schema }}'
+
+      - name: Collect agent output
+        if: always() && steps.claude.outcome != 'skipped'
+        env:
+          STRUCTURED_OUTPUT: ${{ steps.claude.outputs.structured_output }}
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: |
+          printf '%s' "$STRUCTURED_OUTPUT" > agent-output/result.json
+          if [[ -n "$EXECUTION_FILE" && -f "$EXECUTION_FILE" ]]; then
+            jq '[.[] | select(.type == "result")] | last | {num_turns, duration_ms, total_cost_usd, usage, modelUsage}' \
+              "$EXECUTION_FILE" > agent-output/usage.json || true
+          fi
+
+      - name: Verify reproductions
+        if: steps.claude.outcome == 'success'
+        run: python3 .github/scripts/agent/qa-verify.py
+
+      - uses: actions/upload-artifact@v7
+        if: always() && steps.claude.outcome != 'skipped'
+        with:
+          name: qa-output
+          path: agent-output/
+          retention-days: 14
+          overwrite: true
+
+  publish:
+    needs: [gate, agent]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ needs.gate.outputs.pr }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: qa-output
+          path: agent-output
+      - run: python3 .github/scripts/agent/qa-publish.py
+
+  report-failure:
+    needs: [gate, agent, publish]
+    if: failure() && needs.gate.outputs.manual == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ needs.gate.outputs.pr }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - run: gh pr comment "$PR" --repo "$REPO" --body "The QA agent failed. See the [workflow run]($RUN_URL)." > /dev/null

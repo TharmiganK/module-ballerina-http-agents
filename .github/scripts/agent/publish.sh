@@ -222,6 +222,7 @@ case "$MODE" in
       --body-file pr-body.md --label agent/generated)
     pr_number="${pr_url##*/}"
     dispatch_ci "$branch" "$pr_number"
+    gh workflow run agent-qa.yml --repo "$REPO" -f pr="$pr_number" || echo "::warning::Could not dispatch the QA review"
     printf 'Opened %s with the fix for the approved plan.' "$pr_url" > comment.md
     footer >> comment.md
     post_issue_comment "$NUMBER" comment.md

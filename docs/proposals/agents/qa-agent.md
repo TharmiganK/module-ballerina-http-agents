@@ -4,7 +4,7 @@ _Owners_: @TharmiganK
 _Reviewers_: @TharmiganK  
 _Created_: 2026/11/01  
 _Updated_: 2026/11/01  
-_Status_: Draft
+_Status_: Implemented for PoC
 
 ## Summary
 
@@ -46,8 +46,8 @@ Same propose-then-publish split as the bug fixer, in `.github/workflows/agent-qa
 
 | Job | Permissions | What it does |
 |---|---|---|
-| `gate` | `pull-requests: read`, `issues: write` (reaction only) | Resolves the PR number and head SHA for all three triggers, applies the skip rules, reacts to `/qa`. |
-| `agent` | `contents: read`, `pull-requests: read` | Checks out `refs/pull/<n>/merge`, builds with `setup-build`, writes the PR context, runs Claude, then re-runs every claimed reproduction. |
+| `gate` | `contents: read`, `pull-requests: write` (reaction and skip notice only) | Resolves the PR number for all three triggers, applies the skip rules, reacts to `/qa` with 👀, and picks the checkout ref: `refs/pull/<n>/merge`, or `refs/pull/<n>/head` when the PR has merge conflicts. |
+| `agent` | `contents: read`, `pull-requests: read`, `issues: read` | Checks out the chosen ref, builds with `setup-build`, writes the PR context, runs Claude, then re-runs every claimed reproduction. |
 | `publish` | `contents: read`, `pull-requests: write` | Validates the findings, anchors them to the diff, applies the caps and dedup, posts one review. |
 | `report-failure` | `contents: read`, `pull-requests: write` | Comments with the run link, only for `/qa` runs (someone is waiting); automatic runs just show a failed check. |
 
@@ -111,7 +111,7 @@ Style, naming, formatting and refactoring suggestions are out of scope and will 
 
 ### Reproduction verification
 
-`verify-repro.sh` is generalised to take a list of `(test_package, group, test_filter)` entries. After Claude finishes, the agent job re-runs each `bug` finding's group in the agent's workspace and records `reproduced`, `not-reproduced` or `not-run` per finding in `agent-output/repro.json`. Several groups in the same package run in one `bal test` invocation (`--groups qa_12_1,qa_12_2`), so verification costs one test-package run per package rather than per finding. Results are mapped back to findings through the test function names declared in each finding's `test_code`; a finding counts as reproduced only if one of its own test functions failed.
+`.github/scripts/agent/qa-verify.py` handles a list of `(test_package, group, test_filter)` entries (the bug fixer's single-reproduction `verify-repro.sh` is left unchanged during its validation; the two can be merged later). After Claude finishes, the agent job re-runs each `bug` finding's group in the agent's workspace and records `reproduced`, `not-reproduced` or `not-run` per finding in `agent-output/repro.json`. Several groups in the same package run in one `bal test` invocation (`--groups qa_12_1,qa_12_2`), so verification costs one test-package run per package rather than per finding. Results are mapped back to findings through the test function names declared in each finding's `test_code`; a finding counts as reproduced only if one of its own test functions failed.
 
 The publish job:
 
