@@ -1,0 +1,16 @@
+{
+  "units": {},
+  "runs": [
+    {
+      "date": "2026-11-01T06:57:14.840279+00:00",
+      "unit": "sse-streaming",
+      "sha": "ccfe5d49f192be9bc65d557ff0e7b8ce1f030742",
+      "dry_run": true,
+      "agent_result": "success",
+      "filed": 0,
+      "dropped": 0,
+      "report": "reports/2026-W44-sse-streaming-run1.md",
+      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41282474923"
+    }
+  ]
+}
