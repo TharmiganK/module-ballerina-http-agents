@@ -31,7 +31,22 @@ Ballerina test packages by feature area:
 
 ## Building and testing
 
-Prerequisites: JDK 25, Docker (only for LDAP/SOCKS tests), and `packageUser`/`packagePAT` env vars (GitHub PAT with `read:packages`) to resolve dependencies from GitHub Packages. The build downloads the Ballerina distribution (`ballerinaLangVersion` in `gradle.properties`) into `target/ballerina-runtime`.
+Prerequisites: JDK 25, Docker (only for LDAP/SOCKS tests), and `packageUser`/`packagePAT` env vars (GitHub PAT with `read:packages`) to resolve dependencies from GitHub Packages. No Ballerina installation is needed (see below).
+
+### The build-local Ballerina distribution
+
+The Ballerina Gradle plugin unpacks the `jballerina-tools` distribution for `ballerinaLangVersion` (`gradle.properties`), plus the stdlib dependencies, into `target/ballerina-runtime`. When `:http-ballerina:build` passes, the plugin copies the freshly built `http` bala into `target/ballerina-runtime/repo/bala`, so that distribution resolves `ballerina/http` to the code in this checkout. All Ballerina tests run on it.
+
+Use `target/ballerina-runtime/bin/bal` (never a globally installed `bal`, which would pull the released `http` from Central) to run quick samples against the current code. Write the sample outside the repo, then:
+
+```sh
+.github/scripts/run-tests.sh build      # (re)build after changing ballerina/, native/ or compiler-plugin/
+target/ballerina-runtime/bin/bal run /path/to/sample.bal
+```
+
+Module-level listeners (`service ... on new http:Listener(...)`) only start after `main` returns, so a sample whose `main` calls its own service fails with a connection error. In a sample, start the listener in `main` (`check l.attach(svc, "/path"); check l.'start();` and `check l.immediateStop();` at the end), or use a `bal test` test instead.
+
+`./gradlew clean` deletes `target/`, so the next build downloads the distribution again.
 
 **Always use `.github/scripts/run-tests.sh` instead of raw Gradle test commands.** The full suite takes a long time, and the raw Gradle graph runs far more than you ask for (see gotchas).
 
@@ -47,6 +62,8 @@ Prerequisites: JDK 25, Docker (only for LDAP/SOCKS tests), and `packageUser`/`pa
 `DRY_RUN=1` prints the Gradle task graph without running anything; `GRADLE_ARGS="..."` passes extra Gradle args. Ballerina test reports are written to `ballerina-tests/<pkg>/target/report/`.
 
 After changing anything under `ballerina/`, `native/` or `compiler-plugin/`, the `bal` mode rebuilds the package before testing, so no separate build step is needed.
+
+GraalVM native-image tests: add `GRADLE_ARGS=-PbalGraalVMTest` to a `bal` run. The plugin then runs `bal test --graalvm` and turns off code coverage. It needs a GraalVM JDK as `JAVA_HOME`/`GRAALVM_HOME` and is much slower, so use it only for native-image compatibility issues (reflection/resource configs live in `native/src/main/resources/META-INF/native-image`). `-PbalParallelTest` runs `bal test --parallel`.
 
 ### Gotchas
 
