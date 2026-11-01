@@ -86,7 +86,8 @@ apply_patch() {
   lines=$(git diff --numstat "$base"..HEAD | awk '{s += $1 + $2} END {print s + 0}')
   (( lines <= MAX_LINES )) || die "Agent patch changes $lines lines (max $MAX_LINES)"
   if [[ "$require_repro" == true ]]; then
-    git diff "$base"..HEAD | grep -qE "^\+.*repro_${ISSUE}\b" \
+    # Not `git diff | grep -q`: grep exits at the first match, git diff gets SIGPIPE and pipefail fails the check.
+    grep -qE "^\+.*repro_${ISSUE}\b" <<< "$(git diff "$base"..HEAD)" \
       || die "Agent patch does not add a test in group repro_${ISSUE}"
   fi
   echo "Patch OK: $(wc -l <<< "$files") files, $lines lines"
