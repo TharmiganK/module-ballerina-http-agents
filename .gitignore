@@ -58,3 +58,4 @@ integration-tests/lib
 agent-context/
 agent-output/
 agent-scratch/
+__pycache__/

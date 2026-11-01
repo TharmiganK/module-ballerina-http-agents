@@ -52,6 +52,10 @@ esac
 if [[ "${DRY_RUN:-}" == "1" ]]; then args+=(--dry-run); fi
 read -r -a extra <<< "${GRADLE_ARGS:-}"
 
+# bal compiles the http bala into this cache on first use and reuses it while the version is unchanged, so a
+# rebuilt bala would otherwise be ignored and tests would run against stale code.
+if [[ "$mode" != native ]]; then rm -rf target/ballerina-runtime/repo/cache/ballerina/http; fi
+
 # The build rewrites version placeholders in these files; restore any that were clean before the run.
 toml_files=$(git ls-files '*Ballerina.toml' '*Dependencies.toml' '*CompilerPlugin.toml')
 # shellcheck disable=SC2086

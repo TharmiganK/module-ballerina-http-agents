@@ -189,7 +189,9 @@ case "$MODE" in
     ISSUE="$NUMBER"
     status=$(field .status)
     if [[ "$status" == blocked ]]; then
-      { echo "## Implementation blocked"; echo; field .blocked_reason | strip_markers; } > comment.md
+      field .blocked_reason | strip_markers > reason.md
+      grep -q '^## ' reason.md || { echo "## Implementation blocked"; echo; } > comment.md
+      cat reason.md >> comment.md
       echo "The approved plan was not implemented. Comment to revise the plan, then add \`agent/approved\` again." >> comment.md
       footer >> comment.md
       post_issue_comment "$NUMBER" comment.md

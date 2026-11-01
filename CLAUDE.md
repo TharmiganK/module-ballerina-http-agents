@@ -40,7 +40,7 @@ The Ballerina Gradle plugin unpacks the `jballerina-tools` distribution for `bal
 Use `target/ballerina-runtime/bin/bal` (never a globally installed `bal`, which would pull the released `http` from Central) to run quick samples against the current code. Write the sample outside the repo, then:
 
 ```sh
-.github/scripts/run-tests.sh build      # (re)build after changing ballerina/, native/ or compiler-plugin/
+.github/scripts/run-tests.sh build      # (re)build after changing ballerina/, native/ or compiler-plugin/; clears the compiled http cache
 target/ballerina-runtime/bin/bal run /path/to/sample.bal
 ```
 
@@ -71,6 +71,7 @@ GraalVM native-image tests: add `GRADLE_ARGS=-PbalGraalVMTest` to a `bal` run. T
 - `commitTomlFiles` tasks in `ballerina/` and `ballerina-tests/` run `git commit` on regenerated `Ballerina.toml`/`Dependencies.toml` files. The script excludes them and restores any TOML file the build rewrote. Never commit version-only changes to these files.
 - Java test classes in `native` and `compiler-plugin-tests` run from `src/test/resources/testng.xml`. A new test class must be added there or it never runs.
 - `ballerinaTest` starts LDAP (used by `http-security-tests`) and SOCKS (used by `http-misc-tests`) Docker containers. The script only starts them for those packages.
+- `bal` compiles the `http` bala into `target/ballerina-runtime/repo/cache/ballerina/http/` on first use and keeps reusing it while the version is unchanged, so after a rebuild it would run stale code. `run-tests.sh` deletes that cache before every run except `native`; delete it yourself before `target/ballerina-runtime/bin/bal run` after changing `ballerina/` or `native/`.
 - `settings.gradle` publishes a public Gradle build scan on every build. The script passes `--no-scan`; do the same for any raw Gradle command.
 - This repo is a private mirror (`TharmiganK/module-ballerina-http-agents`) whose `upstream` remote is the public `ballerina-platform/module-ballerina-http`. Always pass `--repo TharmiganK/module-ballerina-http-agents` to `gh` commands that create or modify issues, PRs, labels or comments.
 
