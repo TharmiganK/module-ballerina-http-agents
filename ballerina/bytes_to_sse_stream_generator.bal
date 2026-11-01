@@ -150,7 +150,7 @@ isolated function parseSseEvent(string event) returns SseEvent|error {
             if data is () {
                 data = fieldValue;
             } else {
-                data += fieldValue;
+                data += "\n" + fieldValue;
             }
         }
     }
