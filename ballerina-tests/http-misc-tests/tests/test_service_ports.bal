@@ -32,6 +32,7 @@ const requestLimitsTestPort6 = 9556;
 const requestLimitsTestPort7 = 9555;
 const requestLimitsTestPort8 = 9638;
 const requestLimitsTestPort9 = 9639;
+const requestLimitsTestPort10 = 9650;
 
 const responseLimitsTestPort1 = 9557;
 const responseLimitsTestPort2 = 9558;

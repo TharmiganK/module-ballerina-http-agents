@@ -66,6 +66,7 @@ listener http:Listener lowHeaderLimitEP = new (requestLimitsTestPort3, lowHeader
 listener http:Listener midHeaderLimitEP = new (requestLimitsTestPort4, midSizeHeaderConfig);
 listener http:Listener http2HeaderLimitEP = new (requestLimitsTestPort5, http2lowHeaderConfig);
 listener http:Listener lowPayloadLimitEP = new (requestLimitsTestPort6, lowPayloadConfig);
+listener http:Listener defaultLimitEP = new (requestLimitsTestPort10, httpVersion = http:HTTP_1_1);
 
 service /requestUriLimit on normalRequestLimitEP {
 
@@ -188,3 +189,22 @@ function testInvalidPayloadSize() returns error? {
     }
 }
 
+service /defaultLimits on defaultLimitEP {
+
+    resource function get header(@http:Header {name: "X-Token"} string token) returns int {
+        return token.length();
+    }
+}
+
+@test:Config {}
+function testLargeHeaderWithinDefaultLimit() returns error? {
+    http:Client limitClient = check new ("http://localhost:" + requestLimitsTestPort10.toString(),
+        httpVersion = http:HTTP_1_1);
+    string token = "";
+    foreach int i in 0 ..< 12000 {
+        token += "a";
+    }
+    http:Response response = check limitClient->get("/defaultLimits/header", {"X-Token": token});
+    test:assertEquals(response.statusCode, 200, msg = "Found unexpected output");
+    common:assertTextPayload(response.getTextPayload(), "12000");
+}
