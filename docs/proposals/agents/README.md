@@ -18,14 +18,14 @@ The issue analyser and the bug fixer share one label state machine, the prompt p
 Maintainer triggers:
 
 - `agent/investigate`: on an issue, start or restart the issue analyser.
-- `agent/approved`: on an `agent/plan-ready` issue, have the bug fixer implement the latest plan.
+- `agent/approved`: on an `agent/plan-ready` issue, have the bug fixer implement the latest plan; on an `agent/close-suggested` issue, close it with the reason the issue analyser suggested.
 - `agent/auto-fix`: on an agent PR, let the bug fixer address review feedback once reviewers have been quiet for a while.
 - `agent/find-similar`: on an issue or PR, have the defect scanner search for the same defect elsewhere.
 - `/agent <message>`: first word of an issue comment (issue analyser discusses its plan or proposal) or of an agent PR comment or review body (bug fixer addresses the feedback).
 - `/qa`: first word of a PR comment, request a QA review.
 
-State labels, one per issue, set by the agents: `agent/investigating`, `agent/plan-ready`, `agent/needs-info`, `agent/analysed`, `agent/split`, `agent/implementing`, `agent/pr-open`, `agent/failed`. `agent/generated` marks issues and PRs that an agent created.
+State labels, one per issue, set by the agents: `agent/investigating`, `agent/plan-ready`, `agent/needs-info`, `agent/analysed`, `agent/close-suggested`, `agent/split`, `agent/implementing`, `agent/pr-open`, `agent/fixed`, `agent/failed`. `agent/generated` marks issues and PRs that an agent created. `agent-lifecycle.yml` (no agent) keeps these labels right when a PR is merged, closed or reopened, when an issue is closed or reopened, and closes a split parent once all its sub-issues are closed.
 
 ## How they connect
 
-A maintainer adds `agent/investigate` to an issue. The issue analyser classifies it: a bug gets a reproduction and a plan (`agent/plan-ready`), an improvement or feature gets a proposal and a question an answer (`agent/analysed`), and a mixed issue is split into sub-issues that are each analysed. The maintainer refines the plan with `/agent` comments, then adds `agent/approved`; the bug fixer implements the plan and opens a PR, which gets CI and an automatic QA agent review. The bug fixer addresses QA and maintainer feedback through `/agent` (or `agent/auto-fix`), and a maintainer merges. The defect scanner files verified issues that enter the same flow through `agent/investigate`, and once a bug is fixed, `agent/find-similar` on its issue or PR asks the defect scanner to look for the same mistake elsewhere.
+A maintainer adds `agent/investigate` to an issue. The issue analyser classifies it: a bug gets a reproduction and a plan (`agent/plan-ready`), an improvement or feature gets a proposal and a question an answer (`agent/analysed`), and a mixed issue is split into sub-issues that are each analysed. The maintainer refines the plan with `/agent` comments, then adds `agent/approved`; the bug fixer implements the plan and opens a PR, which gets CI and an automatic QA agent review. The bug fixer addresses QA and maintainer feedback through `/agent` (or `agent/auto-fix`), and a maintainer merges; the issue then carries `agent/fixed`. When an issue should not be worked on (duplicate, not a bug, out of scope, invalid), the issue analyser suggests closing it and a maintainer confirms with `agent/approved`. The defect scanner files verified issues that enter the same flow through `agent/investigate`, and once a bug is fixed, `agent/find-similar` on its issue or PR asks the defect scanner to look for the same mistake elsewhere.

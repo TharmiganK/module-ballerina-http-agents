@@ -136,10 +136,12 @@ An issue carries a single `agent/*` state label at a time. The two maintainer la
 | `agent/needs-info` | Issue analyser publish | Could not reproduce or needs details. |
 | `agent/analysed` | Issue analyser publish | Classified as an improvement, feature or question; analysis and proposal (or answer) posted. Not implemented automatically. |
 | `agent/split` | Issue analyser publish | The issue covered several things and was split into linked sub-issues, each analysed separately. |
-| `agent/approved` | Maintainer (trigger) | Ask the bug fixer to implement the latest plan version posted before this label was added. Replaced by `agent/implementing` when the run starts. |
+| `agent/close-suggested` | Issue analyser publish | The analyser suggests closing the issue (duplicate, not a bug, out of scope, invalid, or cannot reproduce after `needs-info`). `agent/approved` closes it; `/agent` asks for a different outcome. |
+| `agent/approved` | Maintainer (trigger) | On `agent/plan-ready`: ask the bug fixer to implement the latest plan version posted before this label was added; replaced by `agent/implementing` when the run starts. On `agent/close-suggested`: close the issue with the suggested reason (`agent-lifecycle.yml`). |
 | `agent/implementing` | Bug fixer gate | Implementation running. |
 | `agent/pr-open` | Bug fixer publish | Fix PR opened. |
 | `agent/failed` | `report-failure` job of either agent | An analysis or implementation failed; a comment links the run and says how to retry. A failed discuss or review only comments and keeps the current state. |
+| `agent/fixed` | Lifecycle workflow | The fix PR was merged (the issue is closed by `Fixes #N`). Removed if the issue is reopened. |
 | `agent/generated` | Publish jobs | Marks issues and PRs created by any agent. |
 | `agent/auto-fix` | Maintainer, on an agent PR | Address review feedback automatically after reviewers go quiet (see below). Not a state label. |
 
@@ -161,8 +163,15 @@ stateDiagram-v2
         implementing --> pr_open
         pr_open --> pr_open: /agent review or comment (replies, pushes)
     }
+    investigating --> close_suggested
+    close_suggested --> [*]: agent/approved (closed with reason)
+    close_suggested --> plan_ready: /agent comment (disagree)
+    close_suggested --> analysed: /agent comment (disagree)
     plan_ready --> implementing: maintainer adds agent/approved
     implementing --> plan_ready: blocked
+    pr_open --> fixed: PR merged
+    pr_open --> plan_ready: PR closed without merging
+    plan_ready --> pr_open: PR reopened
     investigating --> failed
     implementing --> failed
     failed --> investigating: agent/investigate
@@ -170,6 +179,25 @@ stateDiagram-v2
 ```
 
 Labels are created by `.github/scripts/setup-labels.sh`.
+
+### Lifecycle after the agents
+
+`agent-lifecycle.yml` applies fixed state changes when work leaves the agents' hands. It runs no agent: `.github/scripts/agent/lifecycle.sh` only changes labels, comments, closes issues and deletes merged agent branches. It listens to `pull_request_target` (closed, reopened; it never checks out PR code) and `issues` (closed, reopened, labeled).
+
+| Event | What happens |
+|---|---|
+| Agent PR merged | Issue: `agent/pr-open` → `agent/fixed`. PR: `agent/auto-fix` removed. Branch `agent/issue-<n>` deleted. `Fixes #<n>` closes the issue; if it did not, the workflow closes it. |
+| Agent PR closed without merging | Issue: `agent/pr-open` → `agent/plan-ready`, with a comment on the next steps (`/agent` to revise, `agent/approved` to implement again, or close). The branch is kept so the PR can be reopened; the next implementation replaces it. |
+| Agent PR reopened | Issue: `agent/plan-ready` → `agent/pr-open`. |
+| Issue closed | Transient agent labels (`investigate`, `investigating`, `approved`, `implementing`, `plan-ready`, `needs-info`, `close-suggested`, `failed`) are removed; `analysed`, `split` and `fixed` stay as a record. If the issue is a sub-issue and it was the last open one, the split parent gets a summary of each sub-issue's outcome and is closed as completed. |
+| Issue reopened | `agent/fixed` is removed. |
+| `agent/approved` on `agent/close-suggested` | The issue is closed with the suggested reason: duplicate (state reason `duplicate`, `Resolution/Duplicate`, "Duplicate of #N"), not a bug (`Resolution/NotABug`), cannot reproduce (`Resolution/CannotReproduce`), out of scope or invalid (`Reason/Invalid`); the others close as not planned. |
+
+Closes made with `GITHUB_TOKEN` start no workflow, so the script checks the split parent itself after every close it makes.
+
+#### Close suggestions
+
+The issue analyser never closes issues. When the evidence is clear it ends `analyse` or `discuss` with `close-suggested`, a `close_reason` (`duplicate` with `duplicate_of`, `not-a-bug` with the spec section and the observed behaviour, `out-of-scope` naming the right component, `invalid`, or `cannot-reproduce` only after the reporter answered `needs-info` questions) and a `## Suggest closing` comment. It never suggests closing an improvement or feature because it disagrees with it. The publish job validates the reason, adds instructions for maintainers and records the reason in a hidden `<!-- bug-fixer:close reason=… of=… -->` marker, which the lifecycle workflow reads when a maintainer approves. No `Type/*` label is added to an issue suggested for closing.
 
 ### Plan versioning
 
