@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Re-runs the reproduction tests of the QA agent's `bug` findings and records, per finding key, whether one of
+"""Re-runs the reproduction tests of the QA agent's `bug` and `spec` deviation findings and records, per finding key, whether one of
 its own test functions failed. Groups in the same Ballerina test package run in a single `bal test` invocation.
 
 Env: PR. Reads agent-output/result.json; writes agent-output/repro.json and agent-output/repro-<pkg>.log.
@@ -82,7 +82,8 @@ def main():
     by_package = collections.defaultdict(list)
 
     for finding in result.get("findings", []):
-        if finding.get("kind") != "bug":
+        if not (finding.get("kind") == "bug"
+                or (finding.get("kind") == "spec" and finding.get("spec_case") == "deviation")):
             continue
         key, repro = finding["key"], finding.get("repro")
         if not repro:

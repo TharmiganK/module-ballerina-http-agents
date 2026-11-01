@@ -17,7 +17,8 @@ OUT = Path("agent-output")
 BOT = "github-actions[bot]"
 MAX_INLINE = 8
 MAX_BODY = 60000
-LABELS = {"bug": "Bug", "missing-test": "Missing test", "question": "Question"}
+LABELS = {"bug": "Bug", "spec": "Spec", "missing-test": "Missing test", "question": "Question"}
+SPEC_LABELS = {"deviation": "Spec deviation", "not-updated": "Spec not updated"}
 KEY_MARKER = re.compile(r"<!--\s*qa:key=([a-z0-9-]+)\s*-->")
 
 
@@ -86,14 +87,24 @@ def previous_keys():
     return keys
 
 
+def needs_repro(finding):
+    return finding["kind"] == "bug" or (finding["kind"] == "spec" and finding.get("spec_case") == "deviation")
+
+
 def render(finding, kind, verification):
     title = clean(finding["title"])
-    if finding["kind"] == "bug" and kind != "bug":
-        title = f"Possible issue (not reproduced): {title}"
-    parts = [f"**[{LABELS[kind]}]** {title}", "", clean(finding["body"])]
+    downgraded = needs_repro(finding) and kind == "question"
+    if downgraded:
+        prefix = "Possible spec deviation" if finding["kind"] == "spec" else "Possible issue"
+        title = f"{prefix} (not reproduced): {title}"
+    label = SPEC_LABELS[finding["spec_case"]] if kind == "spec" else LABELS[kind]
+    parts = [f"**[{label}]** {title}", ""]
+    if finding["kind"] == "spec" and finding.get("spec_section"):
+        parts += [f"_Spec: {clean(finding['spec_section'])}_", ""]
+    parts.append(clean(finding["body"]))
     repro = finding.get("repro")
-    if finding["kind"] == "bug" and repro:
-        if kind == "bug":
+    if needs_repro(finding) and repro:
+        if not downgraded:
             parts += ["", f"> [!NOTE]\n> **Reproduction verified by the workflow:** `{verification['command']}` → "
                           f"{verification['reason']}."]
             if verification.get("message"):
@@ -123,7 +134,7 @@ def main():
     seen = previous_keys()
 
     inline, other, duplicates = [], [], 0
-    counts = {"bug": 0, "missing-test": 0, "question": 0}
+    counts = {"bug": 0, "spec": 0, "missing-test": 0, "question": 0}
     for finding in result["findings"]:
         if finding.get("kind") not in LABELS or not finding.get("title") or not finding.get("body"):
             fail(f"Invalid finding: {json.dumps(finding)[:300]}")
@@ -132,9 +143,11 @@ def main():
             duplicates += 1
             continue
         seen.add(finding["key"])
+        if finding["kind"] == "spec" and finding.get("spec_case") not in SPEC_LABELS:
+            finding["spec_case"] = "deviation" if finding.get("repro") else "not-updated"
         kind = finding["kind"]
-        verification = repro.get(finding["key"]) if kind == "bug" else None
-        if kind == "bug" and (verification or {}).get("status") != "reproduced":
+        verification = repro.get(finding["key"]) if needs_repro(finding) else None
+        if needs_repro(finding) and (verification or {}).get("status") != "reproduced":
             kind = "question"
         counts[kind] += 1
         body = render(finding, kind, verification)
@@ -149,14 +162,14 @@ def main():
     header = [
         "## QA review", "",
         f"**Reviewed commit:** `{reviewed_sha[:12]}`", "",
-        "| Verified bugs | Missing tests | Questions |", "|---|---|---|",
-        f"| {counts['bug']} | {counts['missing-test']} | {counts['question']} |", "",
+        "| Verified bugs | Spec | Missing tests | Questions |", "|---|---|---|---|",
+        f"| {counts['bug']} | {counts['spec']} | {counts['missing-test']} | {counts['question']} |", "",
     ]
     if stale:
         header += ["> [!WARNING]\n> The PR changed while this review ran; all findings are listed below instead of "
                    "inline. Comment `/qa` to review the latest commit.", ""]
     if not any(counts.values()):
-        header += ["No behavioural issues or missing tests found.", ""]
+        header += ["No behavioural issues, spec issues or missing tests found.", ""]
     body = "\n".join(header) + clean(result["summary"])
     if other:
         body += "\n\n### Other findings\n"

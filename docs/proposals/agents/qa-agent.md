@@ -8,13 +8,13 @@ _Status_: Implemented for PoC
 
 ## Summary
 
-A GitHub Actions based AI agent that reviews pull requests for behaviour and test coverage. It reads the change and its tests, looks for concrete bugs and missing test cases, and posts a single PR review: inline comments anchored to diff lines, and one summary for points that cannot be anchored. Every bug claim is backed by a reproduction test that the workflow re-runs; anything it cannot reproduce is posted as a question.
+A GitHub Actions based AI agent that reviews pull requests for behaviour, spec compliance and test coverage. It reads the change, its tests and the relevant parts of `docs/spec/spec.md`, looks for concrete bugs, spec deviations, stale spec text and missing test cases, and posts a single PR review: inline comments anchored to diff lines, and one summary for points that cannot be anchored. Every bug or spec-deviation claim is backed by a reproduction test that the workflow re-runs; anything it cannot reproduce is posted as a question.
 
 It is the second agent of the PoC, after the [bug fixer](bug-fixer-agent.md), and reuses its infrastructure: the propose-then-publish split, `setup-build`, `run-tests.sh` and reproduction verification.
 
 ## Goals
 
-- Catch behavioural bugs and missing tests in PRs before human review, with few enough comments that each one is worth reading.
+- Catch behavioural bugs, spec deviations, missing spec updates and missing tests in PRs before human review, with few enough comments that each one is worth reading.
 - Never claim a bug without a failing test that the workflow itself ran.
 - Stay out of style, naming and formatting; checkstyle, spotbugs and human reviewers cover those.
 - Never approve or request changes; the merge decision stays with maintainers.
@@ -58,10 +58,11 @@ Same propose-then-publish split as the bug fixer, in `.github/workflows/agent-qa
 ### Agent instructions (summary)
 
 1. Understand the intent from the PR description, linked issues and `docs/spec/spec.md`.
-2. Review the diff for behaviour: wrong conditions, unhandled cases (empty, nil, error unions, HTTP/1.1 vs HTTP/2, client vs service side), resource leaks, concurrency on isolated objects, compatibility of public API changes, and mismatches between code, tests, spec and changelog.
-3. Review the tests: does each behaviour change have a test, do tests assert the behaviour rather than only absence of errors, are negative and edge cases covered?
-4. For each suspected bug, write a reproduction test in group `qa_<pr>_<k>` (k = 1, 2, …) and run it on the PR code. Keep it only if it fails for the suspected reason.
-5. Return at most 8 findings, most important first, plus a summary.
+2. Check spec compliance: find the `docs/spec/spec.md` sections covering the changed behaviour and report a `spec` finding when the new behaviour contradicts them (`deviation`, needs a reproduction asserting the spec's behaviour) or when the PR changes documented behaviour, public API or configuration without updating the spec (`not-updated`, no test needed). Ambiguous spec text becomes a `question` quoting it.
+3. Review the diff for behaviour: wrong conditions, unhandled cases (empty, nil, error unions, HTTP/1.1 vs HTTP/2, client vs service side), resource leaks, concurrency on isolated objects, compatibility of public API changes, and mismatches between code, tests, spec and changelog.
+4. Review the tests: does each behaviour change have a test, do tests assert the behaviour rather than only absence of errors, are negative and edge cases covered?
+5. For each suspected bug or spec deviation, write a reproduction test in group `qa_<pr>_<k>` (k = 1, 2, …) and run it on the PR code. Keep it only if it fails for the suspected reason.
+6. Return at most 8 findings, most important first, plus a summary.
 
 Style, naming, formatting and refactoring suggestions are out of scope and will be dropped.
 
@@ -83,7 +84,9 @@ Style, naming, formatting and refactoring suggestions are out of scope and will 
         "required": ["key", "kind", "title", "body"],
         "properties": {
           "key": {"type": "string", "pattern": "^[a-z0-9-]{3,60}$"},
-          "kind": {"type": "string", "enum": ["bug", "missing-test", "question"]},
+          "kind": {"type": "string", "enum": ["bug", "spec", "missing-test", "question"]},
+          "spec_case": {"type": "string", "enum": ["deviation", "not-updated"]},
+          "spec_section": {"type": "string", "maxLength": 200},
           "title": {"type": "string", "maxLength": 150},
           "body": {"type": "string", "maxLength": 8000},
           "path": {"type": "string"},
@@ -107,16 +110,18 @@ Style, naming, formatting and refactoring suggestions are out of scope and will 
 }
 ```
 
-`key` is a stable slug for the finding (for example `sse-parser-trailing-cr`) used for dedup across runs. `repro` is required for `kind: bug`.
+`key` is a stable slug for the finding (for example `sse-parser-trailing-cr`) used for dedup across runs. `repro` is required for `kind: bug` and for `kind: spec` with `spec_case: deviation`. `spec_section` names the spec heading the finding refers to.
 
 ### Reproduction verification
 
-`.github/scripts/agent/qa-verify.py` handles a list of `(test_package, group, test_filter)` entries (the bug fixer's single-reproduction `verify-repro.sh` is left unchanged during its validation; the two can be merged later). After Claude finishes, the agent job re-runs each `bug` finding's group in the agent's workspace and records `reproduced`, `not-reproduced` or `not-run` per finding in `agent-output/repro.json`. Several groups in the same package run in one `bal test` invocation (`--groups qa_12_1,qa_12_2`), so verification costs one test-package run per package rather than per finding. Results are mapped back to findings through the test function names declared in each finding's `test_code`; a finding counts as reproduced only if one of its own test functions failed.
+`.github/scripts/agent/qa-verify.py` handles a list of `(test_package, group, test_filter)` entries (the bug fixer's single-reproduction `verify-repro.sh` is left unchanged during its validation; the two can be merged later). After Claude finishes, the agent job re-runs the group of each `bug` finding and each `spec` deviation in the agent's workspace and records `reproduced`, `not-reproduced` or `not-run` per finding in `agent-output/repro.json`. Several groups in the same package run in one `bal test` invocation (`--groups qa_12_1,qa_12_2`), so verification costs one test-package run per package rather than per finding. Results are mapped back to findings through the test function names declared in each finding's `test_code`; a finding counts as reproduced only if one of its own test functions failed.
 
 The publish job:
 
-- keeps a `bug` as a bug only if it was `reproduced`, and appends the verified failure message and the test code (collapsed);
-- turns any other `bug` into a `question`, prefixing the title with "Possible issue (not reproduced):" and dropping the claim of a bug.
+- keeps a `bug` or spec deviation as such only if it was `reproduced`, and appends the verified failure message and the test code (collapsed);
+- turns any other `bug` or spec deviation into a `question`, prefixing the title with "Possible issue (not reproduced):" or "Possible spec deviation (not reproduced):".
+
+`spec` findings with `spec_case: not-updated` are posted without verification, labelled "Spec not updated" and naming the stale or missing section.
 
 The QA agent never pushes, so reproduction tests live only in the review comments; the author can copy them into the PR.
 
@@ -126,7 +131,7 @@ The publish job fetches the PR's file patches and computes, for each file, the s
 
 - Findings whose `key` already appears in an earlier QA review on this PR (as a hidden `<!-- qa:key=... -->` marker) are dropped, so `/qa` re-runs only report new points.
 - At most 8 inline comments are posted, in the agent's priority order; the rest move into the summary.
-- Each inline comment is formatted as `**[Bug]**`, `**[Missing test]**` or `**[Question]**` plus the title and body, with the marker.
+- Each inline comment is formatted as `**[Bug]**`, `**[Spec deviation]**`, `**[Spec not updated]**`, `**[Missing test]**` or `**[Question]**` plus the title and body, with the marker.
 
 Everything is posted as one review (`POST /repos/{owner}/{repo}/pulls/{n}/reviews`, `event: COMMENT`), with the summary as the review body. One review means one notification, and `COMMENT` never blocks merging. If there are no findings, the review body says so briefly ("No behavioural issues or missing tests found") with what was checked, so silence is distinguishable from failure.
 
@@ -137,9 +142,9 @@ Everything is posted as one review (`POST /repos/{owner}/{repo}/pulls/{n}/review
 
 **Scope:** <one line on what the PR changes, as understood>
 
-| Verified bugs | Missing tests | Questions |
-|---|---|---|
-| 1 | 2 | 1 |
+| Verified bugs | Spec | Missing tests | Questions |
+|---|---|---|---|
+| 1 | 1 | 2 | 1 |
 
 ### Other findings
 <findings that could not be anchored or exceeded the inline cap>
@@ -193,6 +198,7 @@ The PoC repository has no forks. For upstream, the design keeps fork PRs safe by
 
 1. Run on the bug fixer's PR for issue #1 (via dispatch) and record whether findings are valid.
 2. Seed a PR that introduces a real behavioural bug in an area with a test gap (for example, an off-by-one in a header or query parsing helper) together with a test that does not catch it; expect a verified bug or a missing-test finding.
-3. Open a small, correct and well-tested PR and expect a short "no findings" review, to measure false positives.
-4. Re-run `/qa` on the seeded PR without changes and expect no repeated findings.
-5. Report per run: findings by kind, how many a maintainer judged valid, verification results, time, Actions minutes and Claude usage.
+3. Seed a PR that changes documented behaviour (for example, a default value or status code described in the spec) without updating `docs/spec/spec.md`, and one whose behaviour contradicts the spec; expect a `Spec not updated` finding and a verified `Spec deviation`.
+4. Open a small, correct and well-tested PR and expect a short "no findings" review, to measure false positives.
+5. Re-run `/qa` on the seeded PR without changes and expect no repeated findings.
+6. Report per run: findings by kind, how many a maintainer judged valid, verification results, time, Actions minutes and Claude usage.
