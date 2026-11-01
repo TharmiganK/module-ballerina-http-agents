@@ -4,6 +4,11 @@ This file contains all the notable changes done to the Ballerina HTTP package th
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- [[#1] Fixed the SSE client dropping line breaks (including empty lines) between multiple `data` lines of an event](https://github.com/TharmiganK/module-ballerina-http-agents/issues/1)
+
 ## [2.18.1] - 2026-10-16
 
 ### Changed
