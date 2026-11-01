@@ -1,0 +1,61 @@
+name: "🐞 Report a Bug"
+description: Create an issue if something does not work as expected.
+labels: ["Type/Bug", "module/http"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Select the area this issue relates to
+      options:
+        - Area/CompilerPlugin
+        - Area/Docs
+        - Area/GraalVM
+        - Area/Security
+        - Area/Spec
+    validations:
+      required: false
+  - type: textarea
+    id: background
+    attributes:
+      label: Description
+      description: A clear and concise description of the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Minimal Ballerina code that reproduces the issue (service and/or client), plus the request you sent (e.g. a curl command) if relevant.
+      render: ballerina
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened. Include the error message, response, or stack trace.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: version
+    attributes:
+      label: Version
+      description: Output of `bal version` and the `ballerina/http` version (from Dependencies.toml).
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment Details (with versions)
+      description: OS, JDK, client used, etc.
+    validations:
+      required: false

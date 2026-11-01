@@ -1,0 +1,31 @@
+name: "✍️ Create a Task"
+description: Create a new task.
+labels: ["Type/Task", "module/http"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Select the area this issue relates to
+      options:
+        - Area/CompilerPlugin
+        - Area/Docs
+        - Area/GraalVM
+        - Area/Security
+        - Area/Spec
+    validations:
+      required: false
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear description of what needs to be done.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Enter product/component version.
+    validations:
+      required: false

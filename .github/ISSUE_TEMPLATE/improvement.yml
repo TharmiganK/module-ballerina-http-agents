@@ -1,0 +1,38 @@
+name: "🚀 Improvement Request"
+description: Suggest an improvement to the product.
+labels: ["Type/Improvement", "module/http"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Select the area this issue relates to
+      options:
+        - Area/CompilerPlugin
+        - Area/Docs
+        - Area/GraalVM
+        - Area/Security
+        - Area/Spec
+    validations:
+      required: false
+  - type: textarea
+    id: limitation
+    attributes:
+      label: Current Limitation
+      description: Describe the current limitation.
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested Improvement
+      description: Describe the improvement you suggest.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Enter component version.
+    validations:
+      required: false
