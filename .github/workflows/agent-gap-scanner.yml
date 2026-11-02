@@ -1,5 +1,5 @@
 name: Agent - Gap scanner
-run-name: ${{ inputs.seed != '' && format('Find gaps similar to {0}', inputs.seed) || inputs.handoff == 'true' && 'Check notes from the defect scanner' || (github.event_name == 'schedule' && 'Monthly gap scan' || format('Gap scan {0}', inputs.scope || '(automatic selection)')) }}
+run-name: ${{ inputs.seed != '' && format('Find gaps similar to {0}', inputs.seed) || inputs.handoff == 'true' && 'Check handed-off notes' || (github.event_name == 'schedule' && 'Monthly gap scan' || format('Gap scan {0}', inputs.scope || '(automatic selection)')) }}
 
 # Compares rotating scope units against established HTTP libraries and RFCs and files improvement and feature issues
 # for missing capabilities. Design: docs/proposals/agents/gap-scanner.md
