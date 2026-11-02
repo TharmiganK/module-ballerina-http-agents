@@ -53,6 +53,25 @@
       "dropped": 0,
       "report": "reports/2026-W45-similar-issue-20-run3.md",
       "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41384868152"
+    },
+    {
+      "date": "2026-11-02T05:07:20.185090+00:00",
+      "units": [
+        "gap-similar-issue31-listener-request-phase-deadlines",
+        "gap-similar-issue31-resiliency-time-budgets",
+        "gap-similar-issue31-streaming-and-auxiliary-client-cancel"
+      ],
+      "completed": [
+        "gap-similar-issue31-listener-request-phase-deadlines",
+        "gap-similar-issue31-resiliency-time-budgets",
+        "gap-similar-issue31-streaming-and-auxiliary-client-cancel"
+      ],
+      "sha": "056427b920c60eda30d6b10e79ff21f6cc99b236",
+      "dry_run": false,
+      "filed": 2,
+      "dropped": 3,
+      "report": "reports/2026-W45-similar-issue-31-run4.md",
+      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41391315576"
     }
   ]
 }
