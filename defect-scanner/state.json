@@ -24,6 +24,26 @@
       "last_analysed": "2026-11-01T08:15:01.053703+00:00",
       "sha": "41a3cf1028a224980f8eb56fc2fa1ea5ab0e82bc",
       "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41287139403"
+    },
+    "client-core": {
+      "last_analysed": "2026-11-02T07:09:51.492029+00:00",
+      "sha": "056427b920c60eda30d6b10e79ff21f6cc99b236",
+      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41403250111"
+    },
+    "client-data-binding": {
+      "last_analysed": "2026-11-02T07:09:51.492029+00:00",
+      "sha": "056427b920c60eda30d6b10e79ff21f6cc99b236",
+      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41403250111"
+    },
+    "client-resiliency": {
+      "last_analysed": "2026-11-02T07:09:51.492029+00:00",
+      "sha": "056427b920c60eda30d6b10e79ff21f6cc99b236",
+      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41403250111"
+    },
+    "caching-cookies": {
+      "last_analysed": "2026-11-02T07:09:51.492029+00:00",
+      "sha": "056427b920c60eda30d6b10e79ff21f6cc99b236",
+      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41403250111"
     }
   },
   "runs": [
@@ -142,6 +162,27 @@
       "dropped": 0,
       "report": "reports/2026-W45-similar-issue-31-run1.md",
       "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41378362146"
+    },
+    {
+      "date": "2026-11-02T07:09:51.492029+00:00",
+      "units": [
+        "client-core",
+        "client-data-binding",
+        "client-resiliency",
+        "caching-cookies"
+      ],
+      "completed": [
+        "client-core",
+        "client-data-binding",
+        "client-resiliency",
+        "caching-cookies"
+      ],
+      "sha": "056427b920c60eda30d6b10e79ff21f6cc99b236",
+      "dry_run": false,
+      "filed": 9,
+      "dropped": 2,
+      "report": "reports/2026-W45-run2.md",
+      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41403250111"
     }
   ]
 }
