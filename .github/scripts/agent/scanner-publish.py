@@ -70,6 +70,9 @@ def issue_body(finding, category_label, verification, meta, fingerprint):
              f"**Classification:** {category_label} — {clean(finding['rule'])}"]
     if meta.get("seed"):
         parts += ["", f"**Found while looking for {'gaps' if GAP else 'defects'} similar to #{meta['seed'].split(':', 1)[1]}.**"]
+    if meta.get("handoff"):
+        parts += ["", f"**Noticed by the [{meta['handoff']['from']}]({meta['handoff']['run_url']}) and verified "
+                      f"by the {'gap' if GAP else 'defect'} scanner.**"]
     if finding.get("related_issues"):
         parts += ["", "**Related:** " + ", ".join(f"#{n}" for n in finding["related_issues"])]
     if verification:
@@ -104,6 +107,7 @@ def load_units():
         meta = json.loads((unit_dir / "meta.json").read_text())
         scope = json.loads((unit_dir / "scope.json").read_text()) if (unit_dir / "scope.json").exists() else {}
         meta["seed"] = scope.get("seed", "")
+        meta["handoff"] = scope.get("handoff")
         repro = json.loads((unit_dir / "repro.json").read_text()) if (unit_dir / "repro.json").exists() else {}
         entries += [(meta, finding, repro) for finding in result["findings"]]
     return entries

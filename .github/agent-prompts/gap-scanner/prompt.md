@@ -32,7 +32,7 @@ You cannot file anything. Your only output is the structured result below; a sep
 4. Check for existing reports before keeping it, open or closed: `known-issues.json`, a search of each issue tracker in the run context with the candidate's key terms (`gh api 'search/issues?q=<terms>+repo:<owner>/<repo>'`, two or three term sets), and `docs/proposals/`. If an issue already asks for it, drop the candidate and name the issue in `coverage`; a closed issue that rejected the idea also drops it. Mention related but different issues in `related_issues` (numbers in this repository only).
 5. Score `demand` from 0 to 10: upstream issues, comments and reactions asking for the same thing or hitting the same limitation (`gh api 'search/issues?q=...'` returns `reactions.total_count` and `comments`), how commonly the reference libraries' users use it, and whether an RFC requires or recommends it (MUST/SHOULD). State the evidence in the body.
 
-Prefer few strong findings over many weak ones. Do not report bugs or spec errors here (say in `coverage` that the defect scanner should look at them), security vulnerabilities, cosmetic naming preferences, or gaps that only matter for one unusual use case.
+Prefer few strong findings over many weak ones. Do not report bugs or spec errors here (hand them off to the defect scanner instead), security vulnerabilities (never hand these off either), cosmetic naming preferences, or gaps that only matter for one unusual use case.
 
 ## Output
 
@@ -63,7 +63,14 @@ Prefer few strong findings over many weak ones. Do not report bugs or spec error
 **Open questions:** …
 ```
 
-- `coverage`: Markdown for the run report: each topic you examined and its verdict (present, present with workaround, gap filed as a finding, gap already reported as #n or upstream, not applicable), the samples you ran, and anything for the defect scanner.
+- `coverage`: Markdown for the run report: each topic you examined and its verdict (present, present with workaround, gap filed as a finding, gap already reported as #n or upstream, not applicable), and the samples you ran.
+- `handoffs` (at most 5): things you noticed that belong to a scanner run other than this one, for example a suspected bug or spec problem, or a gap outside the current pattern in a find-similar run, instead of leaving them as notes in `coverage`. The workflow passes each one on as a scope unit, and that run verifies it independently, so write it for a reader with no other context:
+  - `target`: `defect` for a suspected bug or spec problem (wrong behaviour; the defect scanner will try to reproduce it), `gap` for a missing capability or usability gap (the gap scanner will compare it with other libraries).
+  - `key`: stable kebab-case slug; the same observation must get the same key in later runs, so it is never passed on twice.
+  - `title`: one line naming the suspected problem.
+  - `details`: what you saw and why it looks wrong or missing, with permalinks and the exact place to look; for a suspected defect, how it could be triggered.
+  - `paths` (existing files), `spec_sections`, and for a defect the `test_packages` a reproduction would go in.
+  Only hand off what you have a concrete reason to suspect, not general areas to review. Something you can verify and report yourself within this unit's rules is a finding, not a handoff.
 
 ## Find-similar mode
 
@@ -80,3 +87,7 @@ In this mode:
 2. Do not report the seed itself or anything its proposal already covers; if the seed's proposal would naturally extend to an area, say so in `coverage` instead of filing it.
 3. Each other occurrence that passes the usual bar (absent here, established elsewhere, fits the module, not already reported) is a finding. Put the seed's number in `related_issues` when the seed is an issue in this repository, and mention in the body that it is the same gap as the seed in another area.
 4. In `coverage`, list each area you checked for the pattern and the verdict.
+
+## Handoff mode
+
+When the run context says `Mode: handoff`, the unit was created from a note that another scanner run left (`handoff` in `agent-context/scope.json`: `from`, `title`, `details`, with the other run's link). The note is a lead, not a finding: verify it first, with this scanner's usual bar, before anything else. If it holds, report it like any other finding; if it does not, say why in `coverage`. You may then look at the rest of the unit's paths for related problems. Do not return `handoffs` in this mode; mention anything further in `coverage`.

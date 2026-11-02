@@ -4,7 +4,9 @@ A unit is only marked as analysed when its agent job completed and this was not 
 only as counts.
 
 Usage: scanner-state.py <state-dir>
-Find-similar runs (SEED set) write their report under a seed-specific name and never advance the rotation.
+Find-similar runs (SEED set) and handoff runs (HANDOFF=true) write their report under their own name and never advance
+the rotation. Handoffs passed on by this run (<REPORT_DIR>/handoff-report.json) are listed in the report and their keys
+recorded in state.json (handed_off) so they are never passed on twice.
 
 Env: SCANNER (defect or gap; gap uses the gap-scanner state directory and has no security section), UNITS (JSON array of planned units), SEED, SHA, RUN_URL, RUN_NUMBER, DRY_RUN, SEC_FOUND, SEC_DELIVERED, OUTPUTS_DIR,
 REPORT_DIR. Reads <OUTPUTS_DIR>/<artifact>/{meta.json,scope.json,result.json,usage.json,completed} per unit and
@@ -65,6 +67,7 @@ def main():
     completed = [u for u in planned if u in outputs and (outputs[u] / "completed").exists()]
     lines = [
         (f"# Find-similar run {env['RUN_NUMBER']} for {env['SEED']}" if env.get("SEED")
+         else f"# Handoff run {env['RUN_NUMBER']} ({'gap' if GAP else 'defect'} scanner)" if env.get("HANDOFF") == "true"
          else f"# {'Gap' if GAP else 'Defect'} scanner run {env['RUN_NUMBER']}") + (" (dry run)" if dry_run else ""), "",
         f"- **Date:** {now:%Y-%m-%d %H:%M} UTC",
         f"- **Commit:** `{env['SHA'][:12]}`",
@@ -81,6 +84,12 @@ def main():
     if publish.get("dropped"):
         lines += ["", "## Dropped findings"]
         lines += [f"- ({d.get('unit', '?')}) {d['title']} — {d['reason']}" for d in publish["dropped"]]
+    handoffs = load(REPORT_DIR / "handoff-report.json", {"passed": [], "skipped": []})
+    if handoffs.get("passed") or handoffs.get("skipped"):
+        lines += ["", "## Handoffs to other scanner runs"]
+        verb = "Would pass on" if handoffs.get("dry_run") else "Passed on"
+        lines += [f"- {verb} to the {h['target']} scanner ({h['from_unit']}): {h['title']}" for h in handoffs.get("passed", [])]
+        lines += [f"- Not passed on ({h.get('from_unit')}): {h['title']} — {h['reason']}" for h in handoffs.get("skipped", [])]
     if not GAP:
         lines += ["", "## Security",
                   f"- {env.get('SEC_FOUND') or 0} found, {env.get('SEC_DELIVERED') or 0} delivered privately"]
@@ -102,16 +111,19 @@ def main():
 
     week = now.isocalendar()
     seed = env.get("SEED", "").replace(":", "-")
-    name = f"{week.year}-W{week.week:02d}-" + (f"similar-{seed}-" if seed else "") + f"run{env['RUN_NUMBER']}.md"
+    kind = f"similar-{seed}-" if seed else "handoff-" if env.get("HANDOFF") == "true" else ""
+    name = f"{week.year}-W{week.week:02d}-{kind}run{env['RUN_NUMBER']}.md"
     report_path = STATE_DIR / "reports" / name
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(report)
 
     state_file = STATE_DIR / "state.json"
     state = json.loads(state_file.read_text()) if state_file.exists() else {"units": {}, "runs": []}
-    if not dry_run and not env.get("SEED"):
+    if not dry_run and not env.get("SEED") and env.get("HANDOFF") != "true":
         for unit in completed:
             state["units"][unit] = {"last_analysed": now.isoformat(), "sha": env["SHA"], "run_url": env["RUN_URL"]}
+    if not handoffs.get("dry_run"):
+        state["handed_off"] = sorted(set(state.get("handed_off", [])) | {h["done_key"] for h in handoffs.get("passed", [])})
     state["runs"] = (state.get("runs", []) + [{
         "date": now.isoformat(), "units": planned, "completed": completed, "sha": env["SHA"], "dry_run": dry_run,
         "filed": len(publish.get("filed", [])), "dropped": len(publish.get("dropped", [])),

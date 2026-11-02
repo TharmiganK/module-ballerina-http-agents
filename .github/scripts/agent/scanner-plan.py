@@ -5,9 +5,9 @@ Selection: the units given in SCOPE_INPUT (comma-separated); otherwise UNITS_PER
 analysed first (in catalogue order), then by the highest score of weeks since the last analysis plus 4 if any of the
 unit's files changed on master since then.
 
-Custom mode (find-similar): CUSTOM_SCOPES is a JSON array of generated units (same fields as the catalogue, plus
-pattern, seed and exclude) and SEED names the issue or PR they were generated from; the catalogue and rotation are
-not used.
+Custom mode: CUSTOM_SCOPES is a JSON array of generated units (same fields as the catalogue), either from find-similar
+(plus pattern and exclude; SEED names the issue or PR they were generated from) or from another scanner's handoffs
+(plus handoff; no SEED). The catalogue and rotation are not used.
 
 Env: REPO, GH_TOKEN, SCOPE_INPUT, UNITS_PER_RUN, UPSTREAM_ISSUE_REPOS, CUSTOM_SCOPES, SEED; STATE_NAME (state directory on
 the agent-state branch, default defect-scanner) and REFERENCES (a JSON file keyed by unit id whose entry is added to
@@ -48,7 +48,10 @@ def select(state):
     custom = os.environ.get("CUSTOM_SCOPES", "").strip()
     if custom:
         seed = os.environ.get("SEED", "")
-        return [(dict(unit, seed=seed), f"similar to {seed}") for unit in json.loads(custom)]
+        if seed:
+            return [(dict(unit, seed=seed), f"similar to {seed}") for unit in json.loads(custom)]
+        return [(unit, f"handed off by the {unit['handoff']['from']}" if unit.get("handoff") else "custom unit")
+                for unit in json.loads(custom)]
     requested = [r.strip() for r in os.environ.get("SCOPE_INPUT", "").split(",") if r.strip()]
     if requested:
         by_id = {u["id"]: u for u in SCOPES}

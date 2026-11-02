@@ -32,6 +32,10 @@ Filed issues enter the normal flow: a maintainer can add `agent/investigate` to 
 
 For example, with #20 (the retry client ignores `Retry-After`) as the seed, the scanner checks the failover and circuit breaker clients, redirects on 503, and whether services can send `Retry-After` conveniently.
 
+## Handoffs between scanners
+
+While analysing a unit, each scanner often notices problems that belong to the other one: the gap scanner spots a suspected bug, the defect scanner spots a missing capability, or a find-similar run notices something outside its pattern. Instead of leaving these as notes in the run report, the agent returns them as structured `handoffs` (`target` `defect` or `gap`, a stable `key`, `title`, `details` with permalinks, `paths`, `spec_sections`, `test_packages`). After the agent jobs, the `handoff` job (`.github/scripts/agent/scanner-handoff.py`) drops handoffs already passed on by an earlier run (keys recorded as `handed_off` in the source scanner's `state.json`) or whose paths do not exist, keeps at most `SCANNER_MAX_HANDOFFS` (default 3) per run, turns each into a custom scope unit carrying the note, and dispatches the target scanner with `custom_scopes` and `handoff=true`. The receiving run follows its prompt's "Handoff mode": it verifies the note with its own bar (a reproduction for a defect, evidence from other libraries for a gap) before filing anything, and issues it files say which run noticed the problem. Handoff runs never pass notes on themselves, so a note travels at most one step, and they never advance the rotation. Both run reports list what was passed on and what was not, and why. Security problems are never handed off.
+
 ## Why a separate agent
 
 Defect findings are verified by a failing test and have few false positives. Gap findings are judgement calls about what users need. Keeping them in a separate workflow with a lower cap and a slower cadence keeps the defect scanner's output precise, and lets maintainers tune or switch off the gap scanner on its own.

@@ -24,6 +24,10 @@ on:
         description: (find-similar) The issue or PR the custom units were generated from, as issue:<n> or pr:<n>
         required: false
         default: ""
+      handoff:
+        description: (handoff) Set by the other scanner when custom_scopes come from its notes
+        required: false
+        default: "false"
 
 permissions: {}
 
@@ -46,6 +50,7 @@ jobs:
     outputs:
       units: ${{ steps.plan.outputs.units }}
       seed: ${{ inputs.seed }}
+      handoff: ${{ inputs.handoff == 'true' }}
       sha: ${{ steps.info.outputs.sha }}
       dry_run: ${{ steps.info.outputs.dry_run }}
     steps:
@@ -137,6 +142,8 @@ jobs:
             echo "- Scope unit: $UNIT (details in agent-context/scope.json)"
             if jq -e '.seed // empty' agent-context/scope.json > /dev/null; then
               echo "- Mode: find-similar (seed $(jq -r .seed agent-context/scope.json); follow the 'Find-similar mode' section)"
+            elif jq -e '.handoff // empty' agent-context/scope.json > /dev/null; then
+              echo "- Mode: handoff (from the $(jq -r .handoff.from agent-context/scope.json); follow the 'Handoff mode' section)"
             fi
             echo "- Issue trackers to check for existing requests: $REPO ${UPSTREAM_ISSUE_REPOS:-}"
             echo "- Checked-out commit (for permalinks): $SHA"
@@ -220,8 +227,46 @@ jobs:
           if-no-files-found: ignore
           overwrite: true
 
+  # Notes the agent left for the other scanner (or another run of this one) become custom units for that scanner.
+  handoff:
+    needs: [plan, agent]
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      SCANNER: gap
+      RUN_NUMBER: ${{ github.run_number }}
+      DRY_RUN: ${{ needs.plan.outputs.dry_run }}
+      IS_HANDOFF: ${{ needs.plan.outputs.handoff }}
+      MAX_HANDOFFS: ${{ vars.SCANNER_MAX_HANDOFFS }}
+    steps:
+      # Full checkout: the script checks that the handed-off paths exist.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          pattern: gap-output-*
+          path: outputs
+      - run: python3 .github/scripts/agent/scanner-handoff.py
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: gap-handoff
+          path: publish/handoff-report.json
+          retention-days: 14
+          if-no-files-found: ignore
+          overwrite: true
+
   update-state:
-    needs: [plan, agent, publish-issues]
+    needs: [plan, agent, handoff, publish-issues]
     if: always() && needs.plan.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -241,6 +286,11 @@ jobs:
         with:
           name: gap-publish
           path: publish
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: gap-handoff
+          path: publish
       - name: Update state and report
         env:
           UNITS: ${{ needs.plan.outputs.units }}
@@ -248,6 +298,7 @@ jobs:
           RUN_NUMBER: ${{ github.run_number }}
           DRY_RUN: ${{ needs.plan.outputs.dry_run }}
           SEED: ${{ needs.plan.outputs.seed }}
+          HANDOFF: ${{ needs.plan.outputs.handoff }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
