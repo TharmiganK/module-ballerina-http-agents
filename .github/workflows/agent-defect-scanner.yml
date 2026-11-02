@@ -284,7 +284,9 @@ jobs:
           SECURITY_TRANSFER_PRIVATE_KEY: ${{ secrets.SECURITY_TRANSFER_PRIVATE_KEY }}
         run: |
           shopt -s nullglob
-          for dir in security/*/; do .github/scripts/agent/security-transfer.sh decrypt "$dir"; done
+          # A single matching artifact is extracted into security/ itself.
+          if [[ -f security/meta.json ]]; then dirs=(security/); else dirs=(security/*/); fi
+          for dir in "${dirs[@]}"; do .github/scripts/agent/security-transfer.sh decrypt "$dir"; done
       - id: deliver
         run: python3 .github/scripts/agent/scanner-security.py
 

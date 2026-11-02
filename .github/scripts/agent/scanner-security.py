@@ -26,6 +26,13 @@ SEVERITY = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 FP_MARKER = re.compile(r"<!--\s*(?:analyser|scanner):sec=([a-z0-9-]+/[a-z0-9-]+)\s*-->")
 
 
+
+def unit_dirs(root):
+    """One directory per unit. download-artifact extracts a single matching artifact into root itself."""
+    if (root / "meta.json").exists():
+        return [root]
+    return sorted(p for p in root.iterdir() if p.is_dir()) if root.exists() else []
+
 def gh(args, token=None, payload=None):
     env = dict(os.environ, GH_TOKEN=token) if token else os.environ
     proc = subprocess.run(["gh", *args], input=json.dumps(payload) if payload is not None else None,
@@ -60,7 +67,7 @@ def body_for(finding, meta, fingerprint):
 
 def load():
     findings = []
-    for unit_dir in sorted(p for p in ROOT.iterdir() if p.is_dir()) if ROOT.exists() else []:
+    for unit_dir in unit_dirs(ROOT):
         if (unit_dir / "security.json").exists() and (unit_dir / "meta.json").exists():
             meta = json.loads((unit_dir / "meta.json").read_text())
             findings += [(meta, f) for f in json.loads((unit_dir / "security.json").read_text())]

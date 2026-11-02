@@ -30,6 +30,13 @@ CATEGORY = {
 FP_MARKER = re.compile(r"<!--\s*(?:analyser|scanner):fp=([a-z0-9-]+/[a-z0-9-]+)\s*-->")
 
 
+
+def unit_dirs(root):
+    """One directory per unit. download-artifact extracts a single matching artifact into root itself."""
+    if (root / "meta.json").exists():
+        return [root]
+    return sorted(p for p in root.iterdir() if p.is_dir()) if root.exists() else []
+
 def gh(*args, payload=None):
     proc = subprocess.run(["gh", *args], input=json.dumps(payload) if payload is not None else None,
                           capture_output=True, text=True)
@@ -86,7 +93,7 @@ def issue_body(finding, category_label, verification, meta, fingerprint):
 def load_units():
     """Returns [(meta, finding, repro)] for every finding of every completed unit, in unit then priority order."""
     entries = []
-    for unit_dir in sorted(p for p in OUTPUTS.iterdir() if p.is_dir()) if OUTPUTS.exists() else []:
+    for unit_dir in unit_dirs(OUTPUTS):
         if not (unit_dir / "completed").exists():
             print(f"Skipping {unit_dir.name}: the agent job did not complete")
             continue

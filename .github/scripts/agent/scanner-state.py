@@ -23,6 +23,13 @@ REPORT_DIR = Path(os.environ.get("REPORT_DIR", "publish"))
 env = os.environ
 
 
+
+def unit_dirs(root):
+    """One directory per unit. download-artifact extracts a single matching artifact into root itself."""
+    if (root / "meta.json").exists():
+        return [root]
+    return sorted(p for p in root.iterdir() if p.is_dir()) if root.exists() else []
+
 def load(path, default):
     try:
         text = path.read_text() if path.exists() else ""
@@ -33,7 +40,7 @@ def load(path, default):
 
 def unit_outputs():
     by_unit = {}
-    for unit_dir in sorted(p for p in OUTPUTS.iterdir() if p.is_dir()) if OUTPUTS.exists() else []:
+    for unit_dir in unit_dirs(OUTPUTS):
         meta = load(unit_dir / "meta.json", None)
         if meta:
             by_unit[meta["unit"]] = unit_dir
