@@ -1,5 +1,11 @@
 {
-  "units": {},
+  "units": {
+    "client-resiliency": {
+      "last_analysed": "2026-11-02T03:35:00.963513+00:00",
+      "sha": "c4f6d4585b7d5255870a1e1c71e3daddc97ae6c6",
+      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41383397549"
+    }
+  },
   "runs": [
     {
       "date": "2026-11-02T03:24:40.612091+00:00",
@@ -13,6 +19,21 @@
       "dropped": 0,
       "report": "reports/2026-W45-run1.md",
       "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41382490840"
+    },
+    {
+      "date": "2026-11-02T03:35:00.963513+00:00",
+      "units": [
+        "client-resiliency"
+      ],
+      "completed": [
+        "client-resiliency"
+      ],
+      "sha": "c4f6d4585b7d5255870a1e1c71e3daddc97ae6c6",
+      "dry_run": false,
+      "filed": 2,
+      "dropped": 1,
+      "report": "reports/2026-W45-run2.md",
+      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41383397549"
     }
   ]
 }
