@@ -34,6 +34,25 @@
       "dropped": 1,
       "report": "reports/2026-W45-run2.md",
       "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41383397549"
+    },
+    {
+      "date": "2026-11-02T03:49:47.625965+00:00",
+      "units": [
+        "gap-similar-issue20-retry-after-retry-503-redirect",
+        "gap-similar-issue20-retry-after-cb-failover-lb",
+        "gap-similar-issue20-retry-after-server-side-and-sse"
+      ],
+      "completed": [
+        "gap-similar-issue20-retry-after-retry-503-redirect",
+        "gap-similar-issue20-retry-after-cb-failover-lb",
+        "gap-similar-issue20-retry-after-server-side-and-sse"
+      ],
+      "sha": "056427b920c60eda30d6b10e79ff21f6cc99b236",
+      "dry_run": false,
+      "filed": 1,
+      "dropped": 0,
+      "report": "reports/2026-W45-similar-issue-20-run3.md",
+      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41384868152"
     }
   ]
 }
