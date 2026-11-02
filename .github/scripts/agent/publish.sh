@@ -17,6 +17,9 @@ REPRO=agent-output/repro.json
 BOT=github-actions[bot]
 MAX_FILES=25
 MAX_LINES=1500
+# agent/simple: the change outside tests and the changelog stays within these limits and leaves the spec alone.
+SIMPLE_MAX_FILES="${SIMPLE_MAX_FILES:-2}"
+SIMPLE_MAX_LINES="${SIMPLE_MAX_LINES:-30}"
 FORBIDDEN='^(\.github/|\.claude/|CLAUDE\.md$|docs/proposals/|gradle/|gradle\.properties$|settings\.gradle$|(.*/)?build\.gradle$|gradlew)'
 
 die() { echo "::error::$*"; exit 1; }
@@ -118,6 +121,30 @@ close_suggestion() {
   printf '\n\n> [!NOTE]\n> **Suggested: close as %s%s.** A maintainer can add `agent/approved` to close it, comment `/agent <reason>` to ask for a different outcome, or close it by hand.\n' \
     "${reason//-/ }" "${dup:+ of $dup}" >> comment.md
   printf '\n<!-- bug-fixer:close reason=%s of=%s -->' "$reason" "$dup" >> comment.md
+}
+
+# Follows the analyser's size estimate on a plan: agent/simple on the issue when it said simple, otherwise removed.
+plan_size_label() {
+  if [[ "$(field .simple)" == true ]]; then add_labels agent/simple; else remove_labels agent/simple; fi
+}
+
+# Measures the PR's change outside tests and the changelog (GitHub's per-file counts), sets agent/simple on the PR
+# when it is small and leaves the spec alone, and drops it from the issue when it is not. Prints a line for the PR body.
+measure_size() {
+  local pr="$1" issue="$2" stats files lines spec
+  stats=$(gh api --paginate "repos/$REPO/pulls/$pr/files" --jq '.[] | {filename, changes}' | jq -s \
+    '[.[] | select(.filename | test("^(ballerina-tests/|compiler-plugin-tests/|changelog\\.md$)|/src/test/") | not)]')
+  files=$(jq length <<< "$stats")
+  lines=$(jq '[.[].changes] | add // 0' <<< "$stats")
+  spec=$(jq -r '.[] | select(.filename == "docs/spec/spec.md") | .filename' <<< "$stats")
+  if (( files <= SIMPLE_MAX_FILES && lines <= SIMPLE_MAX_LINES )) && [[ -z "$spec" ]]; then
+    gh api "repos/$REPO/issues/$pr/labels" -f "labels[]=agent/simple" > /dev/null
+    echo "**Change size:** $lines lines in $files file(s), not counting tests and the changelog. Labelled \`agent/simple\`."
+  else
+    gh api -X DELETE "repos/$REPO/issues/$pr/labels/$(urlencode agent/simple)" > /dev/null 2>&1 || true
+    gh api -X DELETE "repos/$REPO/issues/$issue/labels/$(urlencode agent/simple)" > /dev/null 2>&1 || true
+    echo "**Change size:** $lines lines in $files file(s), not counting tests and the changelog${spec:+, including a spec change}."
+  fi
 }
 
 latest_plan_version() {
@@ -254,6 +281,7 @@ case "$MODE" in
       esac
     fi
     add_labels "agent/$outcome"
+    if [[ "$outcome" == plan-ready ]]; then plan_size_label; else remove_labels agent/simple; fi
     ;;
 
   discuss)
@@ -284,7 +312,9 @@ case "$MODE" in
     if [[ "$outcome" != no-change ]]; then
       remove_labels agent/plan-ready agent/needs-info agent/analysed agent/close-suggested agent/failed
       add_labels "agent/$outcome"
+      [[ "$outcome" == plan-ready ]] || remove_labels agent/simple
     fi
+    [[ -n "$new" && "$outcome" == plan-ready ]] && plan_size_label
     ;;
 
   implement)
@@ -337,6 +367,9 @@ case "$MODE" in
     pr_url=$(gh pr create --repo "$REPO" --base master --head "$branch" --title "$title" \
       --body-file pr-body.md --label agent/generated)
     pr_number="${pr_url##*/}"
+    size=$(measure_size "$pr_number" "$ISSUE")
+    { printf '%s\n\n' "$size"; cat pr-body.md; } > pr-body-sized.md
+    gh pr edit "$pr_number" --repo "$REPO" --body-file pr-body-sized.md > /dev/null
     dispatch_ci "$branch" "$pr_number"
     gh workflow run agent-qa.yml --repo "$REPO" -f pr="$pr_number" || echo "::warning::Could not dispatch the QA review"
     printf 'Opened %s with the fix for the approved plan.' "$pr_url" > comment.md
@@ -383,6 +416,10 @@ case "$MODE" in
         gh pr edit "$NUMBER" --repo "$REPO" --body-file pr-body.md > /dev/null
       fi
       dispatch_ci "$head_ref" "$NUMBER"
+      size=$(measure_size "$NUMBER" "$ISSUE")
+      gh pr view "$NUMBER" --repo "$REPO" --json body --jq .body \
+        | perl -0pe 's/^\*\*Change size:\*\*.*\n\n?//m' | { printf '%s\n\n' "$size"; cat; } > pr-body.md
+      gh pr edit "$NUMBER" --repo "$REPO" --body-file pr-body.md > /dev/null
     fi
 
     # All thread replies and the summary go out as one review, so the PR timeline shows a single entry for the round.

@@ -74,7 +74,11 @@ After you finish, the workflow re-runs group `repro_<issue>` in `test_package` i
 **Risks:** <behaviour changes, compatibility, spec or changelog impact>
 
 **Confidence:** <high | medium | low> — <why>
+
+**Size:** <simple | normal> — <one line>
 ```
+
+- `simple`: `true` only when all of these hold: the fix touches one or two files outside tests, about 30 changed lines or fewer outside tests and the changelog, no public API, spec or configuration change and no behaviour change beyond the bug itself, and your confidence is high. `simple_reason`: one line on why. Otherwise `false`. The workflow labels the issue `agent/simple` and checks the real change size again when the PR is opened.
 
 For `needs-info`, replace the Code flow, Root cause and Plan sections with `### What I tried` and `### Information needed` (specific questions), and do not include a plan.
 

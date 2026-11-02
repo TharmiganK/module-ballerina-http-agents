@@ -24,7 +24,7 @@ Maintainer triggers:
 - `/agent <message>`: first word of an issue comment (issue analyser discusses its plan or proposal) or of an agent PR comment or review body (bug fixer addresses the feedback).
 - `/qa`: first word of a PR comment, request a QA review.
 
-State labels, one per issue, set by the agents: `agent/investigating`, `agent/plan-ready`, `agent/needs-info`, `agent/analysed`, `agent/close-suggested`, `agent/split`, `agent/implementing`, `agent/pr-open`, `agent/fixed`, `agent/failed`. `agent/generated` marks issues and PRs that an agent created. `agent-lifecycle.yml` (no agent) keeps these labels right when a PR is merged, closed or reopened, when an issue is closed or reopened, and closes a split parent once all its sub-issues are closed.
+State labels, one per issue, set by the agents: `agent/investigating`, `agent/plan-ready`, `agent/needs-info`, `agent/analysed`, `agent/close-suggested`, `agent/split`, `agent/implementing`, `agent/pr-open`, `agent/fixed`, `agent/failed`. `agent/generated` marks issues and PRs that an agent created. `agent/simple` marks a small, low-risk fix: estimated by the issue analyser on the issue, then measured on the PR (at most 2 files and 30 lines outside tests, no spec change). `agent-lifecycle.yml` (no agent) keeps these labels right when a PR is merged, closed or reopened, when an issue is closed or reopened, and closes a split parent once all its sub-issues are closed.
 
 ## How they connect
 

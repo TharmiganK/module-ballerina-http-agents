@@ -47,6 +47,7 @@ label "agent/analysed"      "$AGENT" "Issue analyser: proposal or answer posted 
 label "agent/split"         "$AGENT" "Issue analyser: split into linked sub-issues"
 label "agent/close-suggested" "$AGENT" "Issue analyser: suggests closing; agent/approved closes it with the suggested reason"
 label "agent/fixed"         "$AGENT" "Bug fixer: the fix PR was merged"
+label "agent/simple"        "$AGENT" "Small, low-risk fix: estimated by the issue analyser, measured on the PR"
 label "agent/implementing"  "$AGENT" "Bug fixer: implementing the approved plan"
 label "agent/pr-open"       "$AGENT" "Bug fixer: fix PR opened"
 label "agent/failed"        "$AGENT" "Agent: run failed, see the workflow logs"

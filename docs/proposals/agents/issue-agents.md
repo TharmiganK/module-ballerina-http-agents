@@ -142,6 +142,7 @@ An issue carries a single `agent/*` state label at a time. The two maintainer la
 | `agent/pr-open` | Bug fixer publish | Fix PR opened. |
 | `agent/failed` | `report-failure` job of either agent | An analysis or implementation failed; a comment links the run and says how to retry. A failed discuss or review only comments and keeps the current state. |
 | `agent/fixed` | Lifecycle workflow | The fix PR was merged (the issue is closed by `Fixes #N`). Removed if the issue is reopened. |
+| `agent/simple` | Issue analyser publish (issue), bug fixer publish (PR) | A small, low-risk fix. Not a state label: it sits next to the status label. See "Simple fixes" below. |
 | `agent/generated` | Publish jobs | Marks issues and PRs created by any agent. |
 | `agent/auto-fix` | Maintainer, on an agent PR | Address review feedback automatically after reviewers go quiet (see below). Not a state label. |
 
@@ -194,6 +195,13 @@ Labels are created by `.github/scripts/setup-labels.sh`.
 | `agent/approved` on `agent/close-suggested` | The issue is closed with the suggested reason: duplicate (state reason `duplicate`, `Resolution/Duplicate`, "Duplicate of #N"), not a bug (`Resolution/NotABug`), cannot reproduce (`Resolution/CannotReproduce`), out of scope or invalid (`Reason/Invalid`); the others close as not planned. |
 
 Closes made with `GITHUB_TOKEN` start no workflow, so the script checks the split parent itself after every close it makes.
+
+#### Simple fixes (`agent/simple`)
+
+Maintainers can pick quick reviews first. The label is set twice, by different means:
+
+- **Estimated on the issue.** With every plan (`plan-ready` in analyse, a new plan version in discuss) the analyser sets `simple` and `simple_reason` and ends the plan with a `**Size:**` line. `simple` is true only when the fix touches one or two files and about 30 lines outside tests, changes no public API, spec or configuration, changes no behaviour beyond the bug, and confidence is high. The publish job adds or removes `agent/simple` on the issue to match; any other outcome removes it.
+- **Measured on the PR.** When the bug fixer opens the PR, and after every review round that changes code, the publish job counts the PR's changed lines and files from GitHub's per-file statistics, leaving out `ballerina-tests/`, `compiler-plugin-tests/`, `*/src/test/` and `changelog.md`. At most `SIMPLE_MAX_FILES` (2) files and `SIMPLE_MAX_LINES` (30) lines and no `docs/spec/spec.md` change label the PR `agent/simple`; otherwise the label is removed from the PR and the issue. The PR body starts with a `**Change size:**` line either way.
 
 #### Close suggestions
 
