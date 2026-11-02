@@ -123,6 +123,25 @@
       "dropped": 0,
       "report": "reports/2026-W44-similar-pr-9-run6.md",
       "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41305357401"
+    },
+    {
+      "date": "2026-11-02T02:54:22.188970+00:00",
+      "units": [
+        "similar-issue31-client-timer-config-doc-vs-impl",
+        "similar-issue31-listener-timer-config-doc-vs-impl",
+        "similar-issue31-resiliency-timer-config-doc-vs-impl"
+      ],
+      "completed": [
+        "similar-issue31-client-timer-config-doc-vs-impl",
+        "similar-issue31-listener-timer-config-doc-vs-impl",
+        "similar-issue31-resiliency-timer-config-doc-vs-impl"
+      ],
+      "sha": "166990d08c422700cf582ab67861982af80ac78b",
+      "dry_run": false,
+      "filed": 5,
+      "dropped": 0,
+      "report": "reports/2026-W45-similar-issue-31-run1.md",
+      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41378362146"
     }
   ]
 }
