@@ -1,0 +1,250 @@
+name: Agent - Gap scanner
+run-name: ${{ github.event_name == 'schedule' && 'Monthly gap scan' || format('Gap scan {0}', inputs.scope || '(automatic selection)') }}
+
+# Compares rotating scope units against established HTTP libraries and RFCs and files improvement and feature issues
+# for missing capabilities. Design: docs/proposals/agents/gap-scanner.md
+on:
+  schedule:
+    - cron: "0 2 1 * *"
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: Comma-separated scope unit ids from .github/agent-prompts/defect-scanner/scopes.json (empty = automatic selection)
+        required: false
+        default: ""
+      dry_run:
+        description: Produce the report without filing issues or advancing coverage
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: gap-scanner
+  cancel-in-progress: false
+
+env:
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+  SCANNER: gap
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      units: ${{ steps.plan.outputs.units }}
+      sha: ${{ steps.info.outputs.sha }}
+      dry_run: ${{ steps.info.outputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - name: Fetch state branch
+        run: git fetch --no-tags origin agent-state:refs/remotes/origin/agent-state || echo "No state branch yet"
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SCOPE_INPUT: ${{ inputs.scope }}
+          UNITS_PER_RUN: ${{ vars.GAP_UNITS_PER_RUN || 2 }}
+          UPSTREAM_ISSUE_REPOS: ${{ vars.UPSTREAM_ISSUE_REPOS }}
+          STATE_NAME: gap-scanner
+          REFERENCES: .github/agent-prompts/gap-scanner/references.json
+        run: python3 .github/scripts/agent/scanner-plan.py
+      - id: info
+        env:
+          DRY_RUN_INPUT: ${{ inputs.dry_run }}
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "dry_run=$([[ "$DRY_RUN_INPUT" == true ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gap-context
+          path: agent-context/
+          retention-days: 14
+
+  agent:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        unit: ${{ fromJSON(needs.plan.outputs.units) }}
+    permissions:
+      contents: read
+      issues: read
+    env:
+      packageUser: ${{ secrets.PACKAGE_USER }}
+      packagePAT: ${{ secrets.PACKAGE_PAT }}
+      REPO: ${{ github.repository }}
+      UNIT: ${{ matrix.unit }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          fetch-depth: 50
+          persist-credentials: false
+
+      # Samples run against the http package built from this checkout.
+      - uses: ./.github/actions/setup-build
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: gap-context
+          path: gap-context
+
+      - name: Prepare prompt
+        id: prep
+        env:
+          SHA: ${{ needs.plan.outputs.sha }}
+          DRY_RUN: ${{ needs.plan.outputs.dry_run }}
+          UPSTREAM_ISSUE_REPOS: ${{ vars.UPSTREAM_ISSUE_REPOS }}
+        run: |
+          set -euo pipefail
+          mkdir -p agent-context agent-output agent-scratch
+          cp gap-context/known-issues.json agent-context/
+          cp "gap-context/$UNIT/scope.json" agent-context/scope.json
+          cp agent-context/scope.json agent-output/scope.json
+          jq -n --arg unit "$UNIT" --arg sha "$SHA" --arg run "$GITHUB_RUN_NUMBER" --arg dry "$DRY_RUN" \
+            '{unit: $unit, sha: $sha, run_number: $run, dry_run: ($dry == "true")}' > agent-output/meta.json
+          echo "schema=$(jq -c . .github/agent-prompts/gap-scanner/schema.json)" >> "$GITHUB_OUTPUT"
+          delim="EOF_$(openssl rand -hex 8)"
+          {
+            echo "prompt<<$delim"
+            cat .github/agent-prompts/gap-scanner/prompt.md
+            echo
+            echo "## Run context"
+            echo
+            echo "- Repository: $REPO"
+            echo "- Scope unit: $UNIT (details in agent-context/scope.json)"
+            echo "- Issue trackers to check for existing requests: $REPO ${UPSTREAM_ISSUE_REPOS:-}"
+            echo "- Checked-out commit (for permalinks): $SHA"
+            echo "- Workflow run: $RUN_URL"
+            echo "$delim"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run Claude
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          prompt: ${{ steps.prep.outputs.prompt }}
+          # WebFetch is limited to official documentation of the reference libraries and the RFCs.
+          claude_args: |
+            --model claude-opus-5-5
+            --max-turns 120
+            --allowedTools "Read,Glob,Grep,Write,Edit,Bash(target/ballerina-runtime/bin/bal run:*),Bash(git log:*),Bash(git show:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh api:*),WebFetch(domain:www.rfc-editor.org),WebFetch(domain:datatracker.ietf.org),WebFetch(domain:httpwg.org),WebFetch(domain:pkg.go.dev),WebFetch(domain:docs.oracle.com),WebFetch(domain:square.github.io),WebFetch(domain:www.python-httpx.org),WebFetch(domain:urllib3.readthedocs.io),WebFetch(domain:learn.microsoft.com),WebFetch(domain:www.pollydocs.org),WebFetch(domain:resilience4j.readme.io),WebFetch(domain:docs.spring.io),WebFetch(domain:nodejs.org),WebFetch(domain:undici.nodejs.org),WebFetch(domain:expressjs.com),WebFetch(domain:fastapi.tiangolo.com),WebFetch(domain:www.envoyproxy.io),WebFetch(domain:grpc.io),WebFetch(domain:html.spec.whatwg.org),WebFetch(domain:opentelemetry.io)"
+            --disallowedTools "Bash(git push:*),Bash(git commit:*),Bash(gh issue create:*),Bash(gh issue comment:*),Bash(gh issue edit:*),WebSearch"
+            --json-schema '${{ steps.prep.outputs.schema }}'
+
+      - name: Collect agent output
+        if: always() && steps.claude.outcome != 'skipped'
+        env:
+          STRUCTURED_OUTPUT: ${{ steps.claude.outputs.structured_output }}
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: |
+          set -uo pipefail
+          printf '%s' "$STRUCTURED_OUTPUT" > agent-output/result.json
+          jq -e 'type == "object"' agent-output/result.json > /dev/null 2>&1 || : > agent-output/result.json
+          if [[ -n "$EXECUTION_FILE" && -f "$EXECUTION_FILE" ]]; then
+            jq '[.[] | select(.type == "result")] | last | {num_turns, duration_ms, total_cost_usd, usage}' \
+              "$EXECUTION_FILE" > agent-output/usage.json || true
+          fi
+
+      - name: Mark unit completed
+        if: steps.claude.outcome == 'success'
+        run: touch agent-output/completed
+
+      - uses: actions/upload-artifact@v7
+        if: always() && steps.claude.outcome != 'skipped'
+        with:
+          name: gap-output-${{ matrix.unit }}
+          path: agent-output/
+          retention-days: 14
+          overwrite: true
+
+  publish-issues:
+    needs: [plan, agent]
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      DRY_RUN: ${{ needs.plan.outputs.dry_run }}
+      MAX_ISSUES: ${{ vars.GAP_MAX_ISSUES || 2 }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          pattern: gap-output-*
+          path: outputs
+      - run: python3 .github/scripts/agent/scanner-publish.py
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: gap-publish
+          path: publish/
+          retention-days: 14
+          if-no-files-found: ignore
+          overwrite: true
+
+  update-state:
+    needs: [plan, agent, publish-issues]
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          pattern: gap-output-*
+          path: outputs
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: gap-publish
+          path: publish
+      - name: Update state and report
+        env:
+          UNITS: ${{ needs.plan.outputs.units }}
+          SHA: ${{ needs.plan.outputs.sha }}
+          RUN_NUMBER: ${{ github.run_number }}
+          DRY_RUN: ${{ needs.plan.outputs.dry_run }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch --no-tags --depth=1 origin agent-state:refs/remotes/origin/agent-state 2>/dev/null; then
+            git worktree add -B agent-state state origin/agent-state
+          else
+            git worktree add --orphan -b agent-state state
+          fi
+          python3 .github/scripts/agent/scanner-state.py state
+          git -C state add -A
+          git -C state commit -q -m "Gap scanner run $RUN_NUMBER: $(jq -r 'join(", ")' <<< "$UNITS")"
+          # The defect scanner pushes to the same branch (another directory), so rebase and retry on a race.
+          for attempt in 1 2 3; do
+            git -C state push -q origin agent-state && break
+            [[ $attempt == 3 ]] && exit 1
+            git -C state pull -q --rebase origin agent-state
+          done

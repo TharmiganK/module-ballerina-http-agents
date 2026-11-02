@@ -9,7 +9,9 @@ Custom mode (find-similar): CUSTOM_SCOPES is a JSON array of generated units (sa
 pattern, seed and exclude) and SEED names the issue or PR they were generated from; the catalogue and rotation are
 not used.
 
-Env: REPO, GH_TOKEN, SCOPE_INPUT, UNITS_PER_RUN, UPSTREAM_ISSUE_REPOS, CUSTOM_SCOPES, SEED. Expects the agent-state branch fetched as
+Env: REPO, GH_TOKEN, SCOPE_INPUT, UNITS_PER_RUN, UPSTREAM_ISSUE_REPOS, CUSTOM_SCOPES, SEED; STATE_NAME (state directory on
+the agent-state branch, default defect-scanner) and REFERENCES (a JSON file keyed by unit id whose entry is added to
+the unit as references), both used by the gap scanner. Expects the agent-state branch fetched as
 origin/agent-state if it exists. Writes agent-context/known-issues.json and agent-context/<unit>/scope.json, and the
 step output units (JSON array of unit ids).
 """
@@ -21,6 +23,8 @@ from pathlib import Path
 
 SCOPES = json.loads(Path(".github/agent-prompts/defect-scanner/scopes.json").read_text())["units"]
 OUT = Path("agent-context")
+STATE_NAME = os.environ.get("STATE_NAME") or "defect-scanner"
+REFERENCES = json.loads(Path(os.environ["REFERENCES"]).read_text()) if os.environ.get("REFERENCES") else None
 
 
 def git(*args):
@@ -28,7 +32,7 @@ def git(*args):
 
 
 def load_state():
-    shown = git("show", "origin/agent-state:defect-scanner/state.json")
+    shown = git("show", f"origin/agent-state:{STATE_NAME}/state.json")
     return json.loads(shown.stdout) if shown.returncode == 0 else {"units": {}}
 
 
@@ -70,17 +74,18 @@ def select(state):
 
 
 def list_issues(repo, label):
+    labels = ["--label", label] if label else []
     listed = subprocess.run(
-        ["gh", "issue", "list", "--repo", repo, "--state", "all", "--label", label,
+        ["gh", "issue", "list", "--repo", repo, "--state", "all", *labels,
          "--limit", "2000", "--json", "number,title,state,labels,body,url"],
         capture_output=True, text=True, check=True)
     return json.loads(listed.stdout)
 
 
 def known_issues():
-    """Issues of this repository plus, for a mirror, the upstream trackers in UPSTREAM_ISSUE_REPOS
+    """All issues of this repository plus, for a mirror, the upstream trackers in UPSTREAM_ISSUE_REPOS
     ("owner/repo:label" entries separated by spaces)."""
-    sources = [(os.environ["REPO"], "module/http"), (os.environ["REPO"], "agent/generated")]
+    sources = [(os.environ["REPO"], None)]
     for entry in os.environ.get("UPSTREAM_ISSUE_REPOS", "").split():
         repo, _, label = entry.partition(":")
         sources.append((repo, label or "module/http"))
@@ -102,6 +107,8 @@ def main():
         previous = state.get("units", {}).get(unit["id"], {})
         scope = dict(unit, selection_reason=reason, previous_analysis=previous or None,
                      changed_since_previous=changed_files(unit, previous.get("sha", "")))
+        if REFERENCES is not None:
+            scope["references"] = REFERENCES.get(unit["id"], {})
         (OUT / unit["id"]).mkdir(exist_ok=True)
         (OUT / unit["id"] / "scope.json").write_text(json.dumps(scope, indent=2))
         print(f"Selected unit {unit['id']} ({reason})")

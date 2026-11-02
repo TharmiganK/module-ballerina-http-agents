@@ -6,7 +6,7 @@ only as counts.
 Usage: scanner-state.py <state-dir>
 Find-similar runs (SEED set) write their report under a seed-specific name and never advance the rotation.
 
-Env: UNITS (JSON array of planned units), SEED, SHA, RUN_URL, RUN_NUMBER, DRY_RUN, SEC_FOUND, SEC_DELIVERED, OUTPUTS_DIR,
+Env: SCANNER (defect or gap; gap uses the gap-scanner state directory and has no security section), UNITS (JSON array of planned units), SEED, SHA, RUN_URL, RUN_NUMBER, DRY_RUN, SEC_FOUND, SEC_DELIVERED, OUTPUTS_DIR,
 REPORT_DIR. Reads <OUTPUTS_DIR>/<artifact>/{meta.json,scope.json,result.json,usage.json,completed} per unit and
 <REPORT_DIR>/publish-report.json.
 """
@@ -16,7 +16,8 @@ import os
 import sys
 from pathlib import Path
 
-STATE_DIR = Path(sys.argv[1]) / "defect-scanner"
+GAP = os.environ.get("SCANNER", "defect") == "gap"
+STATE_DIR = Path(sys.argv[1]) / ("gap-scanner" if GAP else "defect-scanner")
 OUTPUTS = Path(os.environ.get("OUTPUTS_DIR", "outputs"))
 REPORT_DIR = Path(os.environ.get("REPORT_DIR", "publish"))
 env = os.environ
@@ -57,7 +58,7 @@ def main():
     completed = [u for u in planned if u in outputs and (outputs[u] / "completed").exists()]
     lines = [
         (f"# Find-similar run {env['RUN_NUMBER']} for {env['SEED']}" if env.get("SEED")
-         else f"# Defect scanner run {env['RUN_NUMBER']}") + (" (dry run)" if dry_run else ""), "",
+         else f"# {'Gap' if GAP else 'Defect'} scanner run {env['RUN_NUMBER']}") + (" (dry run)" if dry_run else ""), "",
         f"- **Date:** {now:%Y-%m-%d %H:%M} UTC",
         f"- **Commit:** `{env['SHA'][:12]}`",
         f"- **Units:** {', '.join(f'`{u}`' for u in planned)} ({len(completed)} completed)",
@@ -73,8 +74,9 @@ def main():
     if publish.get("dropped"):
         lines += ["", "## Dropped findings"]
         lines += [f"- ({d.get('unit', '?')}) {d['title']} — {d['reason']}" for d in publish["dropped"]]
-    lines += ["", "## Security",
-              f"- {env.get('SEC_FOUND') or 0} found, {env.get('SEC_DELIVERED') or 0} delivered privately"]
+    if not GAP:
+        lines += ["", "## Security",
+                  f"- {env.get('SEC_FOUND') or 0} found, {env.get('SEC_DELIVERED') or 0} delivered privately"]
 
     for unit in planned:
         unit_dir = outputs.get(unit)

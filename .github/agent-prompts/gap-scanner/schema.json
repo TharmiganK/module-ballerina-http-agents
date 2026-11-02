@@ -1,0 +1,26 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["coverage", "findings"],
+  "properties": {
+    "coverage": {"type": "string", "minLength": 1, "maxLength": 20000},
+    "findings": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "category", "title", "body", "rule", "demand"],
+        "properties": {
+          "key": {"type": "string", "minLength": 3, "maxLength": 60},
+          "category": {"type": "string", "enum": ["improvement", "feature"]},
+          "title": {"type": "string", "minLength": 1, "maxLength": 120},
+          "body": {"type": "string", "minLength": 1, "maxLength": 30000},
+          "rule": {"type": "string", "minLength": 1, "maxLength": 500},
+          "demand": {"type": "integer", "minimum": 0, "maximum": 10},
+          "related_issues": {"type": "array", "items": {"type": "integer"}}
+        }
+      }
+    }
+  }
+}

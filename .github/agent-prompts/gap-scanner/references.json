@@ -1,0 +1,82 @@
+{
+  "listener": {
+    "libraries": ["Go net/http Server", "Java Netty / Helidon WebServer", "ASP.NET Core Kestrel", "Node.js http.Server", "Spring Boot (Tomcat/Netty) server properties"],
+    "topics": ["read/write/idle/header timeouts per phase", "graceful shutdown with drain deadline", "connection and request-size limits (headers, URI, body, concurrent streams)", "binding to several addresses, Unix sockets, port 0 with the bound port readable", "server-wide hooks (connection state, shutdown callbacks)", "keep-alive and max requests per connection"],
+    "rfcs": ["RFC 9110", "RFC 9112"]
+  },
+  "service-dispatching": {
+    "libraries": ["Spring MVC/WebFlux request mapping", "ASP.NET Core routing", "Go 1.22 net/http ServeMux patterns", "Express / Fastify routers", "JAX-RS (Jersey)"],
+    "topics": ["route constraints and typed segments", "wildcard and catch-all segments", "matching on host, header or media type", "automatic HEAD and OPTIONS, 405 with Allow", "route introspection and generated links", "versioned routes"],
+    "rfcs": ["RFC 9110 sections 9 and 15.5.6", "RFC 6570"]
+  },
+  "service-parameter-binding": {
+    "libraries": ["Spring MVC argument resolvers and validation", "ASP.NET Core model binding", "FastAPI parameter declarations", "JAX-RS parameter annotations", "Fastify schema validation"],
+    "topics": ["default values and optional binding for query, header and path", "repeated query parameters and arrays/maps", "form and multipart binding to records", "custom converters for parameter types", "validation errors reported per field", "request body size or media-type checks per resource"],
+    "rfcs": ["RFC 9110", "RFC 7578", "RFC 3986"]
+  },
+  "service-response": {
+    "libraries": ["Spring ResponseEntity and ProblemDetail", "ASP.NET Core results and ProblemDetails", "FastAPI responses", "JAX-RS Response", "Go http.ResponseWriter"],
+    "topics": ["problem details (RFC 9457) error bodies", "conditional responses (ETag, Last-Modified, 304, 412)", "range requests and partial content", "file and stream responses with content disposition", "early hints / 1xx responses", "response compression negotiation"],
+    "rfcs": ["RFC 9457", "RFC 9110 sections 13 and 14", "RFC 8297", "RFC 6266"]
+  },
+  "client-core": {
+    "libraries": ["Go net/http Client and context", "Java java.net.http.HttpClient", "OkHttp", "Python httpx", ".NET HttpClient / SocketsHttpHandler", "Node.js undici / fetch"],
+    "topics": ["per-request timeouts and total deadlines", "cancellation that aborts the exchange", "per-request configuration overrides", "connection pool limits per host and pool metrics", "DNS resolution control and happy eyeballs", "request/response event hooks and middleware", "proxy configuration (system, per-host, no-proxy)"],
+    "rfcs": ["RFC 9110", "RFC 9112", "RFC 8305"]
+  },
+  "client-data-binding": {
+    "libraries": ["Spring RestClient / WebClient body conversion", "Retrofit converters", "Python httpx with pydantic", ".NET HttpClient JSON extensions", "OpenFeign decoders"],
+    "topics": ["custom decoders per media type", "binding error responses to typed errors", "streaming large bodies to records", "lenient vs strict binding switches per call", "content negotiation via Accept based on the target type"],
+    "rfcs": ["RFC 9110 section 12"]
+  },
+  "client-resiliency": {
+    "libraries": ["Resilience4j (Retry, CircuitBreaker, Bulkhead, RateLimiter, TimeLimiter)", "Polly / .NET Microsoft.Extensions.Http.Resilience", "OkHttp interceptors and followRedirects", "Python urllib3 Retry / tenacity", "Go hashicorp/go-retryablehttp", "Envoy retry and outlier-detection policies", "gRPC retry policy and hedging"],
+    "topics": ["honouring Retry-After on 429 and 503", "exponential backoff with jitter and a max delay", "retry budgets and per-attempt timeouts", "idempotency-aware retries (method rules, idempotency keys)", "retry predicates on errors, status codes and response content", "hedged requests", "circuit breaker states, half-open probing, slow-call thresholds, events and metrics", "bulkhead / concurrency limiting and rate limiting", "load balancer health checks, weighted and least-request strategies", "redirect policies (cross-origin header stripping, 303 vs 307/308 method rules, max hops)"],
+    "rfcs": ["RFC 9110 sections 9.2.2, 10.2.3, 15.4 and 15.6.4", "RFC 6585 section 4", "draft-ietf-httpapi-idempotency-key-header", "draft-ietf-httpapi-ratelimit-headers"]
+  },
+  "caching-cookies": {
+    "libraries": ["OkHttp Cache and CookieJar", "Python httpx / hishel", "Java CookieManager", ".NET CookieContainer", "Varnish / browser caching behaviour"],
+    "topics": ["stale-while-revalidate and stale-if-error", "Vary handling", "cache storage backends and size limits", "SameSite, Partitioned and prefix (__Host-) cookie attributes", "cookie persistence and per-request cookie control"],
+    "rfcs": ["RFC 9111", "RFC 5861", "RFC 6265bis"]
+  },
+  "headers-payload": {
+    "libraries": ["Go net/http Header and Request body", "Java HttpClient BodyPublishers/BodyHandlers", "OkHttp RequestBody/ResponseBody", "Spring HttpHeaders", "Python httpx"],
+    "topics": ["typed accessors for common headers (dates, Cache-Control, Link, Content-Disposition)", "streaming request bodies from files and generators", "multipart builders and streaming parsers", "trailers", "structured field values", "decompression control (gzip, br, zstd)"],
+    "rfcs": ["RFC 8941", "RFC 8288", "RFC 7578", "RFC 9110 section 8.4"]
+  },
+  "interceptors-errors": {
+    "libraries": ["Spring HandlerInterceptor / WebFilter", "ASP.NET Core middleware and exception handlers", "Express / Fastify middleware and hooks", "OkHttp interceptors", "Go middleware patterns"],
+    "topics": ["per-service and per-route middleware ordering", "short-circuit responses from interceptors", "global error handlers mapping errors to responses", "access to the matched route template in middleware", "client-side interceptors"],
+    "rfcs": ["RFC 9457"]
+  },
+  "auth": {
+    "libraries": ["Spring Security resource server and OAuth2 client", "ASP.NET Core authentication handlers", "Python authlib", "OkHttp Authenticator"],
+    "topics": ["token refresh and retry on 401", "scope/claim-based authorization per resource", "multiple auth schemes per listener", "API key auth", "DPoP and mTLS-bound tokens", "WWW-Authenticate challenges with error details"],
+    "rfcs": ["RFC 6750", "RFC 9449", "RFC 8705", "RFC 9110 section 11"]
+  },
+  "ssl": {
+    "libraries": ["Go crypto/tls with net/http", "Java SSLContext / HttpClient", "OkHttp CertificatePinner", "Netty SslContextBuilder", ".NET SslClientAuthenticationOptions"],
+    "topics": ["certificate pinning", "hot reload of certificates", "SNI-based certificate selection on the listener", "OCSP stapling and revocation checks", "TLS 1.3 only / cipher policy presets", "PEM and PKCS12 from memory"],
+    "rfcs": ["RFC 8446", "RFC 6066", "RFC 6960"]
+  },
+  "http2": {
+    "libraries": ["Go golang.org/x/net/http2", "Netty HTTP/2 codec", "OkHttp HTTP/2", "Node.js http2", ".NET HTTP/2 and HTTP/3"],
+    "topics": ["HTTP/3", "ping-based health checks and keep-alive", "flow-control window tuning", "max concurrent streams per connection on the client", "graceful GOAWAY handling", "h2c upgrade vs prior knowledge selection"],
+    "rfcs": ["RFC 9113", "RFC 9114"]
+  },
+  "sse-streaming": {
+    "libraries": ["Spring SseEmitter / Flux", "ASP.NET Core SSE (TypedResults.ServerSentEvents)", "OkHttp EventSource", "browser EventSource", "Python httpx-sse"],
+    "topics": ["client reconnection with Last-Event-ID and retry", "heartbeat / comment events", "back-pressure on producers", "streaming JSON lines (NDJSON)", "cancellation of streams from either side"],
+    "rfcs": ["WHATWG HTML server-sent events", "RFC 9110"]
+  },
+  "compiler-plugin": {
+    "libraries": ["Spring Boot configuration processor", "ASP.NET Core analyzers", "FastAPI/Pydantic static checks", "OpenAPI generators"],
+    "topics": ["diagnostics for ambiguous or conflicting routes", "code actions for common mistakes", "OpenAPI generation coverage", "warnings for blocking calls or unsafe configuration"],
+    "rfcs": []
+  },
+  "logging": {
+    "libraries": ["Spring Boot access logs and observability", "ASP.NET Core HTTP logging", "OkHttp HttpLoggingInterceptor", "Go slog with middleware", "OpenTelemetry HTTP semantic conventions"],
+    "topics": ["structured (JSON) access logs with configurable fields", "redaction of sensitive headers", "per-request correlation ids", "body logging with size limits", "OpenTelemetry semantic-convention attributes"],
+    "rfcs": []
+  }
+}

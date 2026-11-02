@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Files the defect scanner's public findings as issues, across all scope units of the run: drops unverified bugs and
+"""Files the defect scanner's (or, with SCANNER=gap, the gap scanner's) public findings as issues, across all scope units of the run: drops unverified bugs and
 questions, skips findings whose fingerprint already exists in any agent-generated issue (open or closed), files at most
 MAX_ISSUES (default 6) per run with bugs first, and writes a publish report. With DRY_RUN=true nothing is filed.
 
-Env: REPO, RUN_URL, GH_TOKEN, DRY_RUN, MAX_ISSUES. Reads <OUTPUTS_DIR>/*/{result.json,repro.json,meta.json,completed}
+Env: REPO, RUN_URL, GH_TOKEN, DRY_RUN, MAX_ISSUES, SCANNER (defect or gap). Reads <OUTPUTS_DIR>/*/{result.json,repro.json,meta.json,completed}
 (one directory per unit; units without the completed marker are skipped); writes publish-report.json and dry-run-*.md
 to REPORT_DIR.
 """
@@ -18,7 +18,11 @@ DRY_RUN = os.environ.get("DRY_RUN", "false") == "true"
 OUTPUTS = Path(os.environ.get("OUTPUTS_DIR", "outputs"))
 REPORT_DIR = Path(os.environ.get("REPORT_DIR", "publish"))
 MAX_ISSUES = int(os.environ.get("MAX_ISSUES") or 6)
+GAP = os.environ.get("SCANNER", "defect") == "gap"
 CATEGORY = {
+    "improvement": ("Improvement", ["Type/Improvement", "module/http", "agent/generated"]),
+    "feature": ("New feature", ["Type/NewFeature", "module/http", "agent/generated"]),
+} if GAP else {
     "bug": ("Bug", ["Type/Bug", "module/http", "agent/generated"]),
     "spec": ("Spec issue", ["Type/Improvement", "Area/Spec", "module/http", "agent/generated"]),
     "question": ("Question", ["Type/Question", "Area/Spec", "module/http", "agent/generated"]),
@@ -71,8 +75,9 @@ def issue_body(finding, category_label, verification, meta, fingerprint):
     elif finding.get("repro"):
         parts += ["", "<details><summary>Test showing the current behaviour</summary>", "", "````ballerina",
                   clean(finding["repro"]["test_code"]), "````", "", "</details>"]
+    name = "gap scanner" if GAP else "defect scanner (find similar)" if meta.get("seed") else "defect scanner"
     parts += ["", "---",
-              f"<sub>Found by the {'defect scanner (find similar)' if meta.get('seed') else 'defect scanner'} in scope "
+              f"<sub>Found by the {name} in scope "
               f"`{meta['unit']}` at `{meta['sha'][:12]}` · "
               f"[workflow run]({RUN_URL})</sub>", "", f"<!-- scanner:fp={fingerprint} -->"]
     return "\n".join(parts)
@@ -101,15 +106,17 @@ def main():
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     known = existing_fingerprints()
     report = {"filed": [], "would_file": [], "dropped": []}
-    # Bugs take the capped slots first; otherwise unit and priority order are kept (sorted() is stable).
-    for meta, finding, repro in sorted(load_units(), key=lambda e: e[1].get("category") != "bug"):
+    # Bugs take the capped slots first; otherwise unit and priority order are kept (sorted() is stable). Gap findings
+    # are ranked by the agent's demand score instead.
+    rank = (lambda e: -e[1].get("demand", 0)) if GAP else (lambda e: e[1].get("category") != "bug")
+    for meta, finding, repro in sorted(load_units(), key=rank):
         title = clean(finding.get("title", ""))
         category = finding.get("category")
         unit = meta["unit"]
         if category not in CATEGORY or not title or not finding.get("body") or not finding.get("rule"):
             report["dropped"].append({"unit": unit, "title": title or "(untitled)", "reason": "invalid finding"})
             continue
-        fingerprint = f"{unit}/{slug(finding.get('key', ''))}"
+        fingerprint = f"{'gap-' if GAP else ''}{unit}/{slug(finding.get('key', ''))}"
         verification = None
         if category in ("bug", "question"):
             verification = repro.get(finding.get("key"), {})
