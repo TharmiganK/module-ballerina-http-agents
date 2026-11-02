@@ -183,6 +183,22 @@
       "dropped": 2,
       "report": "reports/2026-W45-run2.md",
       "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41403250111"
+    },
+    {
+      "date": "2026-11-02T08:15:19.507274+00:00",
+      "units": [
+        "handoff-gap5-cb-half-open-stale-trial-decision"
+      ],
+      "completed": [
+        "handoff-gap5-cb-half-open-stale-trial-decision"
+      ],
+      "sha": "6d5a76fe606850f5381e116bf9d555bf436b508e",
+      "dry_run": false,
+      "filed": 1,
+      "dropped": 0,
+      "report": "reports/2026-W45-handoff-run3.md",
+      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41410973868"
     }
-  ]
+  ],
+  "handed_off": []
 }
