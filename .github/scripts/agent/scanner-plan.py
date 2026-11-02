@@ -107,7 +107,7 @@ def main():
         previous = state.get("units", {}).get(unit["id"], {})
         scope = dict(unit, selection_reason=reason, previous_analysis=previous or None,
                      changed_since_previous=changed_files(unit, previous.get("sha", "")))
-        if REFERENCES is not None:
+        if REFERENCES is not None and "references" not in unit:
             scope["references"] = REFERENCES.get(unit["id"], {})
         (OUT / unit["id"]).mkdir(exist_ok=True)
         (OUT / unit["id"] / "scope.json").write_text(json.dumps(scope, indent=2))

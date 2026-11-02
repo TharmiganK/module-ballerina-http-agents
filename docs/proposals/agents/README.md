@@ -10,7 +10,7 @@ GitHub Actions agents built on `anthropics/claude-code-action@v1`. Each agent pr
 | Bug fixer | Implements an approved plan and opens the fix PR; addresses review feedback on its PRs | Label `agent/approved` on a `agent/plan-ready` issue; `/agent` comment or review on the agent PR; label `agent/auto-fix` on the PR for automatic rounds | A PR on `agent/issue-<n>` with the reproduction as a regression test; review replies, resolved threads and pushes | `.github/workflows/agent-bug-fixer.yml` (with `agent-auto-fix.yml`) | [issue-agents.md](issue-agents.md) |
 | QA agent | Reviews a PR for behaviour, spec compliance and test coverage, with verified reproductions for bug claims | Automatic when a same-repository PR is opened and when the bug fixer opens a PR; `/qa` comment on a PR (also for fork PRs) | One PR review with inline findings | `.github/workflows/agent-qa.yml` | [qa-agent.md](qa-agent.md) |
 | Defect scanner | Weekly scan of rotating scope units for bugs, spec problems and security issues; find-similar search for other occurrences of a known defect | Runs weekly (or manual dispatch); label `agent/find-similar` on an issue or PR | Verified, deduplicated issues; security findings as draft advisories; a run report on the `agent-state` branch | `.github/workflows/agent-defect-scanner.yml`, `.github/workflows/agent-find-similar.yml` | [defect-scanner.md](defect-scanner.md) |
-| Gap scanner | Monthly comparison of rotating scope units with established HTTP libraries in other languages and the RFCs, for missing capabilities and usability gaps | Runs monthly (or manual dispatch) | At most two `Type/Improvement` / `Type/NewFeature` issues per run with evidence, demand and a proposal; a run report on the `agent-state` branch | `.github/workflows/agent-gap-scanner.yml` | [gap-scanner.md](gap-scanner.md) |
+| Gap scanner | Monthly comparison of rotating scope units with established HTTP libraries in other languages and the RFCs, for missing capabilities and usability gaps | Runs monthly (or manual dispatch); label `agent/find-similar` on an improvement or feature issue | At most two `Type/Improvement` / `Type/NewFeature` issues per run with evidence, demand and a proposal; a run report on the `agent-state` branch | `.github/workflows/agent-gap-scanner.yml` | [gap-scanner.md](gap-scanner.md) |
 
 The issue analyser and the bug fixer share one label state machine, the prompt preamble `.github/agent-prompts/issue-common.md` and the reusable workflow `.github/workflows/agent-issue-run.yml`.
 
@@ -21,7 +21,7 @@ Maintainer triggers:
 - `agent/investigate`: on an issue, start or restart the issue analyser.
 - `agent/approved`: on an `agent/plan-ready` issue, have the bug fixer implement the latest plan; on an `agent/close-suggested` issue, close it with the reason the issue analyser suggested.
 - `agent/auto-fix`: on an agent PR, let the bug fixer address review feedback once reviewers have been quiet for a while.
-- `agent/find-similar`: on an issue or PR, have the defect scanner search for the same defect elsewhere.
+- `agent/find-similar`: on an issue or PR, search for the same problem elsewhere: the defect scanner for a bug, the gap scanner for an improvement or feature request.
 - `/agent <message>`: first word of an issue comment (issue analyser discusses its plan or proposal) or of an agent PR comment or review body (bug fixer addresses the feedback).
 - `/qa`: first word of a PR comment, request a QA review.
 

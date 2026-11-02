@@ -64,3 +64,19 @@ Prefer few strong findings over many weak ones. Do not report bugs or spec error
 ```
 
 - `coverage`: Markdown for the run report: each topic you examined and its verdict (present, present with workaround, gap filed as a finding, gap already reported as #n or upstream, not applicable), the samples you ran, and anything for the defect scanner.
+
+## Find-similar mode
+
+When the run context says `Mode: find-similar`, the unit was generated from a known gap (the seed) instead of taken from the catalogue. `agent-context/scope.json` then also has:
+
+- `seed`: the issue or PR it was generated from (`issue:<n>` or `pr:<n>`); read it with `gh issue view` or `gh pr view` for full detail, including any analysis the issue analyser posted.
+- `pattern`: the missing capability (`summary`), the design assumption behind it (`root_cause`), and the seed's proposal (`fix`) when there is one.
+- `hints`: where to look; `exclude`: the seed's own request and locations.
+- `references`: the libraries, topics and RFCs chosen for this unit (may be empty; then use `.github/agent-prompts/gap-scanner/references.json`).
+
+In this mode:
+
+1. Look for the same missing capability, or the same design assumption, in the unit's sibling areas: another client or resiliency strategy, the other side (client vs service), another protocol or configuration record. For example, a seed "retry ignores `Retry-After`" leads to checking the failover and circuit breaker clients, redirects on 503, and whether the service side can send `Retry-After` conveniently.
+2. Do not report the seed itself or anything its proposal already covers; if the seed's proposal would naturally extend to an area, say so in `coverage` instead of filing it.
+3. Each other occurrence that passes the usual bar (absent here, established elsewhere, fits the module, not already reported) is a finding. Put the seed's number in `related_issues` when the seed is an issue in this repository, and mention in the body that it is the same gap as the seed in another area.
+4. In `coverage`, list each area you checked for the pattern and the verdict.

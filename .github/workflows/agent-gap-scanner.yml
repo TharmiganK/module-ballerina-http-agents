@@ -1,5 +1,5 @@
 name: Agent - Gap scanner
-run-name: ${{ github.event_name == 'schedule' && 'Monthly gap scan' || format('Gap scan {0}', inputs.scope || '(automatic selection)') }}
+run-name: ${{ inputs.seed != '' && format('Find gaps similar to {0}', inputs.seed) || (github.event_name == 'schedule' && 'Monthly gap scan' || format('Gap scan {0}', inputs.scope || '(automatic selection)')) }}
 
 # Compares rotating scope units against established HTTP libraries and RFCs and files improvement and feature issues
 # for missing capabilities. Design: docs/proposals/agents/gap-scanner.md
@@ -16,11 +16,20 @@ on:
         description: Produce the report without filing issues or advancing coverage
         type: boolean
         default: false
+      custom_scopes:
+        description: (find-similar) JSON array of generated scope units; replaces the catalogue selection
+        required: false
+        default: ""
+      seed:
+        description: (find-similar) The issue or PR the custom units were generated from, as issue:<n> or pr:<n>
+        required: false
+        default: ""
 
 permissions: {}
 
+# Scheduled and catalogue runs are serialised; find-similar runs are independent of them and of each other.
 concurrency:
-  group: gap-scanner
+  group: ${{ inputs.custom_scopes != '' && format('find-similar-gap-{0}', github.run_id) || 'gap-scanner' }}
   cancel-in-progress: false
 
 env:
@@ -36,6 +45,7 @@ jobs:
       issues: read
     outputs:
       units: ${{ steps.plan.outputs.units }}
+      seed: ${{ inputs.seed }}
       sha: ${{ steps.info.outputs.sha }}
       dry_run: ${{ steps.info.outputs.dry_run }}
     steps:
@@ -54,6 +64,8 @@ jobs:
           UPSTREAM_ISSUE_REPOS: ${{ vars.UPSTREAM_ISSUE_REPOS }}
           STATE_NAME: gap-scanner
           REFERENCES: .github/agent-prompts/gap-scanner/references.json
+          CUSTOM_SCOPES: ${{ inputs.custom_scopes }}
+          SEED: ${{ inputs.seed }}
         run: python3 .github/scripts/agent/scanner-plan.py
       - id: info
         env:
@@ -123,6 +135,9 @@ jobs:
             echo
             echo "- Repository: $REPO"
             echo "- Scope unit: $UNIT (details in agent-context/scope.json)"
+            if jq -e '.seed // empty' agent-context/scope.json > /dev/null; then
+              echo "- Mode: find-similar (seed $(jq -r .seed agent-context/scope.json); follow the 'Find-similar mode' section)"
+            fi
             echo "- Issue trackers to check for existing requests: $REPO ${UPSTREAM_ISSUE_REPOS:-}"
             echo "- Checked-out commit (for permalinks): $SHA"
             echo "- Workflow run: $RUN_URL"
@@ -135,6 +150,8 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
+          # find-similar dispatches this workflow with GITHUB_TOKEN, whose actor is github-actions[bot].
+          allowed_bots: ${{ github.event_name == 'workflow_dispatch' && 'github-actions' || '' }}
           prompt: ${{ steps.prep.outputs.prompt }}
           # WebFetch is limited to official documentation of the reference libraries and the RFCs.
           claude_args: |
@@ -230,6 +247,7 @@ jobs:
           SHA: ${{ needs.plan.outputs.sha }}
           RUN_NUMBER: ${{ github.run_number }}
           DRY_RUN: ${{ needs.plan.outputs.dry_run }}
+          SEED: ${{ needs.plan.outputs.seed }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
@@ -248,3 +266,33 @@ jobs:
             [[ $attempt == 3 ]] && exit 1
             git -C state pull -q --rebase origin agent-state
           done
+
+  # find-similar: one summary comment on the issue or PR the units were generated from.
+  report-seed:
+    needs: [plan, agent, publish-issues, update-state]
+    if: always() && needs.plan.result == 'success' && needs.plan.outputs.seed != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      SEED: ${{ needs.plan.outputs.seed }}
+      DRY_RUN: ${{ needs.plan.outputs.dry_run }}
+      RUN_NUMBER: ${{ github.run_number }}
+      AGENT_RESULT: ${{ needs.agent.result }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: gap-publish
+          path: publish
+      - name: Comment on the seed
+        run: .github/scripts/agent/scanner-report-seed.sh

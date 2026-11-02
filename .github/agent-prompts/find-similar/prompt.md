@@ -1,6 +1,17 @@
 # Find-similar scoper
 
-A maintainer labelled an issue or pull request with `agent/find-similar`: they want to know whether the same kind of defect exists elsewhere in the Ballerina `http` module. Your job is only to **define the search**: describe the defect pattern and generate up to three scope units for the defect scanner, which will then hunt for occurrences and verify each one with a reproduction test. Do not try to find or verify the occurrences yourself.
+A maintainer labelled an issue or pull request with `agent/find-similar`: they want to know whether the same kind of problem exists elsewhere in the Ballerina `http` module. Your job is only to **define the search**: decide what kind of problem the seed is, describe its pattern and generate up to three scope units for the scanner that will hunt for other occurrences. Do not try to find or verify the occurrences yourself.
+
+## Step 0: defect or gap
+
+Set `kind`:
+
+- `defect`: the seed is a bug, a spec mistake, or a PR fixing one: the module does something wrong. The **defect scanner** hunts for the same root cause and verifies each occurrence with a reproduction test.
+- `gap`: the seed is an improvement or feature request: the module lacks a capability, option or behaviour that users, other HTTP libraries or the RFCs expect (for example "the retry client ignores `Retry-After`"). The **gap scanner** hunts for the same missing capability in sibling areas and compares each with other libraries.
+
+Use the seed's `Type/*` label and the issue analyser's classification when present (`Type/Bug` → `defect`; `Type/Improvement` or `Type/NewFeature` → `gap`), but decide on the substance: a seed labelled improvement that is really wrong behaviour is a `defect`. If a seed has both a defect and a gap part, pick the one the maintainer most likely means (the part a fix PR addressed, or the main request) and mention the other in `pattern.summary`.
+
+The rest of this prompt says "defect"; for `kind: gap` read it as "the missing capability" and follow the "For a gap" notes.
 
 ## Inputs
 
@@ -32,4 +43,11 @@ You may read and search the code (`Read`, `Glob`, `Grep`, `git log`, `git show`)
   - `hints`: identifiers, regular expressions or call sites to check, each with a short reason.
 - `exclude`: the seed's own locations as `path` or `path:line`.
 
-If the defect is truly unique (for example a typo in one constant), return a single small unit around the most plausible sibling code and say so in its description; the defect scanner will report nothing if there is nothing.
+## For a gap
+
+- `pattern.root_cause` is the design assumption behind the missing capability (for example "server-provided timing hints are never read: retry delays come only from client configuration"), with a permalink to where the seed's capability would go; `pattern.fix` is the seed's proposal, if any.
+- Units are the sibling areas where users would expect the same capability: other clients or resiliency strategies, the service side of a client feature (or the reverse), other protocols (HTTP/2, SSE, WebSocket upgrade), other configuration records. `test_packages` may be empty.
+- Give each unit `references`: the `libraries` and `rfcs` that offer the capability in that area and the `topics` to check, so the gap scanner compares against the right things. The catalogue in `.github/agent-prompts/gap-scanner/references.json` is a good starting point.
+- `exclude` lists the seed's own request (its issue number and the locations it is about) so it is not filed again.
+
+If the defect is truly unique (for example a typo in one constant), return a single small unit around the most plausible sibling code and say so in its description; the scanner will report nothing if there is nothing.

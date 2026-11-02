@@ -69,7 +69,7 @@ def issue_body(finding, category_label, verification, meta, fingerprint):
     parts = [clean(finding["body"]), "",
              f"**Classification:** {category_label} — {clean(finding['rule'])}"]
     if meta.get("seed"):
-        parts += ["", f"**Found while looking for defects similar to #{meta['seed'].split(':', 1)[1]}.**"]
+        parts += ["", f"**Found while looking for {'gaps' if GAP else 'defects'} similar to #{meta['seed'].split(':', 1)[1]}.**"]
     if finding.get("related_issues"):
         parts += ["", "**Related:** " + ", ".join(f"#{n}" for n in finding["related_issues"])]
     if verification:
@@ -82,7 +82,7 @@ def issue_body(finding, category_label, verification, meta, fingerprint):
     elif finding.get("repro"):
         parts += ["", "<details><summary>Test showing the current behaviour</summary>", "", "````ballerina",
                   clean(finding["repro"]["test_code"]), "````", "", "</details>"]
-    name = "gap scanner" if GAP else "defect scanner (find similar)" if meta.get("seed") else "defect scanner"
+    name = ("gap scanner" if GAP else "defect scanner") + (" (find similar)" if meta.get("seed") else "")
     parts += ["", "---",
               f"<sub>Found by the {name} in scope "
               f"`{meta['unit']}` at `{meta['sha'][:12]}` · "

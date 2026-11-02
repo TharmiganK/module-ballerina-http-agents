@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Validates the find-similar scoper's output and turns it into custom defect scanner units.
+"""Validates the find-similar scoper's output and turns it into custom units for the defect scanner (kind defect) or
+the gap scanner (kind gap).
 
 Drops paths that do not exist and unknown test packages, prefixes unit ids with the seed so their fingerprints never
-collide with catalogue units, and requires at least one usable unit. Prints the units as compact JSON (the defect scanner's
-custom_scopes input).
+collide with catalogue units, and requires at least one usable unit. Prints the units as compact JSON (the scanner's
+custom_scopes input); every unit carries the kind.
 
 Usage: find-similar-scope.py <result.json> <seed: issue:<n>|pr:<n>>
 """
@@ -26,7 +27,10 @@ def main():
         raise SystemExit(f"::error::Invalid seed {seed}")
     if not isinstance(result, dict) or not result.get("units") or not result.get("pattern"):
         raise SystemExit("::error::The scoper produced no valid output")
-    prefix = "similar-" + seed.replace(":", "")
+    kind = result.get("kind", "defect")
+    if kind not in ("defect", "gap"):
+        raise SystemExit(f"::error::Unknown kind {kind}")
+    prefix = ("similar-" if kind == "defect" else "gap-similar-") + seed.replace(":", "")
     known_packages = {p.name for p in Path("ballerina-tests").iterdir() if p.is_dir()} | {"native", "compiler-plugin"}
 
     units = []
@@ -40,6 +44,7 @@ def main():
             print(f"::warning::Unit {unit.get('id')}: no existing paths, skipped", file=sys.stderr)
             continue
         units.append({
+            "kind": kind,
             "id": f"{prefix}-{slug(unit.get('id', ''))}",
             "description": unit.get("description", ""),
             "spec_sections": unit.get("spec_sections", []),
@@ -48,6 +53,7 @@ def main():
             "hints": unit.get("hints", []),
             "pattern": result["pattern"],
             "exclude": result.get("exclude", []),
+            **({"references": unit.get("references", {})} if kind == "gap" else {}),
         })
     if not units:
         raise SystemExit("::error::No usable scope unit (all paths missing)")

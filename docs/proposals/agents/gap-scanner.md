@@ -26,6 +26,12 @@ Each finding gets a `demand` score from 0 to 10 based on upstream issues and rea
 
 Filed issues enter the normal flow: a maintainer can add `agent/investigate` to have the issue analyser refine the proposal, or close the issue.
 
+## Find-similar for gaps
+
+`agent/find-similar` (`.github/workflows/agent-find-similar.yml`) also works on improvement and feature issues. The scoper agent first decides whether the seed is a `defect` or a `gap` (from the `Type/*` label and the issue analyser's classification, checked against the substance). For a gap it describes the missing capability and the design assumption behind it, and generates up to three sibling areas where users would expect the same capability (other clients or resiliency strategies, the other side of a client/service feature, other protocols), each with its own reference libraries and RFCs. The gap scanner is then dispatched with those units (`custom_scopes`, `seed`) and its prompt's find-similar section: the seed and whatever its proposal already covers are never filed again, each other occurrence must pass the usual bar, and issues link the seed. A summary comment on the seed lists what was filed (`scanner-report-seed.sh`, shared with the defect scanner). Find-similar runs never advance the monthly rotation.
+
+For example, with #20 (the retry client ignores `Retry-After`) as the seed, the scanner checks the failover and circuit breaker clients, redirects on 503, and whether services can send `Retry-After` conveniently.
+
 ## Why a separate agent
 
 Defect findings are verified by a failing test and have few false positives. Gap findings are judgement calls about what users need. Keeping them in a separate workflow with a lower cap and a slower cadence keeps the defect scanner's output precise, and lets maintainers tune or switch off the gap scanner on its own.
