@@ -1,5 +1,5 @@
 name: Agent - Defect scanner
-run-name: ${{ inputs.seed != '' && format('Find similar to {0}', inputs.seed) || (github.event_name == 'schedule' && 'Weekly scan' || format('Scan {0}', inputs.scope || '(automatic selection)')) }}
+run-name: ${{ inputs.seed != '' && format('Find similar to {0}', inputs.seed) || inputs.handoff == 'true' && 'Check notes from the gap scanner' || (github.event_name == 'schedule' && 'Weekly scan' || format('Scan {0}', inputs.scope || '(automatic selection)')) }}
 
 # Design: docs/proposals/agents/defect-scanner.md
 on:
