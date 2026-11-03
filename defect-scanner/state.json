@@ -44,6 +44,26 @@
       "last_analysed": "2026-11-02T07:09:51.492029+00:00",
       "sha": "056427b920c60eda30d6b10e79ff21f6cc99b236",
       "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41403250111"
+    },
+    "headers-payload": {
+      "last_analysed": "2026-11-03T08:26:38.519040+00:00",
+      "sha": "ad64ade67e37abdff15fba06fd8f40e74dcd269e",
+      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41600797137"
+    },
+    "interceptors-errors": {
+      "last_analysed": "2026-11-03T08:26:38.519040+00:00",
+      "sha": "ad64ade67e37abdff15fba06fd8f40e74dcd269e",
+      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41600797137"
+    },
+    "auth": {
+      "last_analysed": "2026-11-03T08:26:38.519040+00:00",
+      "sha": "ad64ade67e37abdff15fba06fd8f40e74dcd269e",
+      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41600797137"
+    },
+    "ssl": {
+      "last_analysed": "2026-11-03T08:26:38.519040+00:00",
+      "sha": "ad64ade67e37abdff15fba06fd8f40e74dcd269e",
+      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41600797137"
     }
   },
   "runs": [
@@ -198,7 +218,32 @@
       "dropped": 0,
       "report": "reports/2026-W45-handoff-run3.md",
       "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41410973868"
+    },
+    {
+      "date": "2026-11-03T08:26:38.519040+00:00",
+      "units": [
+        "headers-payload",
+        "interceptors-errors",
+        "auth",
+        "ssl"
+      ],
+      "completed": [
+        "headers-payload",
+        "interceptors-errors",
+        "auth",
+        "ssl"
+      ],
+      "sha": "ad64ade67e37abdff15fba06fd8f40e74dcd269e",
+      "dry_run": false,
+      "filed": 11,
+      "dropped": 0,
+      "report": "reports/2026-W45-run4.md",
+      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41600797137"
     }
   ],
-  "handed_off": []
+  "handed_off": [
+    "defect:http2-stream-id-header-leaks-into-http11-response",
+    "defect:request-add-cookies-ascending-path-order",
+    "defect:request-cache-control-parse-case-and-multi-header"
+  ]
 }
