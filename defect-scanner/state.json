@@ -239,6 +239,25 @@
       "dropped": 0,
       "report": "reports/2026-W45-run4.md",
       "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41600797137"
+    },
+    {
+      "date": "2026-11-03T08:32:20.100926+00:00",
+      "units": [
+        "handoff-defect4-request-add-cookies-ascending-path-order",
+        "handoff-defect4-request-cache-control-parse-case-and-mul",
+        "handoff-defect4-http2-stream-id-header-leaks-into-http11"
+      ],
+      "completed": [
+        "handoff-defect4-request-add-cookies-ascending-path-order",
+        "handoff-defect4-request-cache-control-parse-case-and-mul",
+        "handoff-defect4-http2-stream-id-header-leaks-into-http11"
+      ],
+      "sha": "ad64ade67e37abdff15fba06fd8f40e74dcd269e",
+      "dry_run": false,
+      "filed": 4,
+      "dropped": 0,
+      "report": "reports/2026-W45-handoff-run5.md",
+      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41603242527"
     }
   ],
   "handed_off": [
