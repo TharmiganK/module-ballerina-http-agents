@@ -71,6 +71,20 @@ public isolated class CookieStore {
         }
         lock {
             Cookie? identicalCookie = self.getIdenticalCookie(validated);
+            if isExpired(validated) {
+                // An expired cookie removes the identical cookie from the store and is not stored itself.
+                if identicalCookie is Cookie {
+                    string? identicalCookieDomain = identicalCookie.domain;
+                    string? identicalCookiePath = identicalCookie.path;
+                    if identicalCookieDomain is string && identicalCookiePath is string {
+                        var result = self.removeCookie(identicalCookie.name, identicalCookieDomain, identicalCookiePath);
+                        if result is error {
+                            return error CookieHandlingError("Error in removing expired cookie", result);
+                        }
+                    }
+                }
+                return;
+            }
             if validated.isPersistent() {
                 var persistentCookieHandler = self.persistentCookieHandler;
                 if persistentCookieHandler is PersistentCookieHandler {
