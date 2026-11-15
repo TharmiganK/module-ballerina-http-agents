@@ -186,3 +186,42 @@ isolated function assertEventStream(stream<http:SseEvent, error?> actualSseEvent
         test:assertEquals(valueRecord?.value, expectedEvent);
     }
 }
+
+listener http:Listener sseMultiLineDataListener = new http:Listener(sseMultiLineDataPort, httpVersion = http:HTTP_1_1);
+final http:Client sseMultiLineDataClient = check new (string `http://localhost:${sseMultiLineDataPort}`,
+    httpVersion = http:HTTP_1_1);
+
+service /sse on sseMultiLineDataListener {
+    resource function get multiLineData() returns stream<http:SseEvent, error?> {
+        http:SseEvent[] events = [{data: "line1\nline2"}];
+        return events.toStream();
+    }
+
+    resource function get emptyLineData() returns stream<http:SseEvent, error?> {
+        http:SseEvent[] events = [{data: "x\n"}, {data: "a\n\nb"}, {data: "\ny"}, {data: ""}];
+        return events.toStream();
+    }
+}
+
+@test:Config {groups: ["repro_1"]}
+function testSseClientPreservesNewlinesInMultiLineData() returns error? {
+    string wire = check sseMultiLineDataClient->/sse/multiLineData(targetType = string);
+    test:assertEquals(wire, "data: line1\ndata: line2\n\n");
+
+    stream<http:SseEvent, error?> actualSseEvents = check sseMultiLineDataClient->/sse/multiLineData;
+    record {|http:SseEvent value;|}? valueRecord = check actualSseEvents.next();
+    test:assertEquals(valueRecord?.value?.data, "line1\nline2");
+}
+
+@test:Config {groups: ["repro_1"]}
+function testSseClientPreservesEmptyLinesInData() returns error? {
+    string wire = check sseMultiLineDataClient->/sse/emptyLineData(targetType = string);
+    test:assertEquals(wire, "data: x\ndata: \n\n" + "data: a\ndata: \ndata: b\n\n" + "data: \ndata: y\n\n"
+        + "data: \n\n");
+
+    stream<http:SseEvent, error?> actualSseEvents = check sseMultiLineDataClient->/sse/emptyLineData;
+    string?[] actualData = check from http:SseEvent event in actualSseEvents
+        select event.data;
+    string?[] expectedData = ["x\n", "a\n\nb", "\ny", ""];
+    test:assertEquals(actualData, expectedData);
+}

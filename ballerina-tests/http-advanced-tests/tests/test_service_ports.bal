@@ -50,6 +50,7 @@ const int cookieTestPort2 = 9254;
 
 const int http1SsePort = 9094;
 const int http2SsePort = 9095;
+const int sseMultiLineDataPort = 9112;
 
 const int serviceContractTestPort = 9096;
 
