@@ -30,6 +30,7 @@ isolated function performDataBinding(Response response, TargetType targetType, b
     if contentType == "" {
         return getBuilderFromType(response, targetType, requireLaxDataBinding);
     }
+    contentType = getBaseMediaType(contentType);
     if XML_PATTERN.isFullMatch(contentType) {
         return xmlPayloadBuilder(response, targetType);
     } else if TEXT_PATTERN.isFullMatch(contentType) {
@@ -43,6 +44,14 @@ isolated function performDataBinding(Response response, TargetType targetType, b
     } else {
         return getBuilderFromType(response, targetType, requireLaxDataBinding);
     }
+}
+
+// Returns the media type without parameters (e.g. `charset`), in lower case, so that it can be matched
+// against the media type patterns.
+isolated function getBaseMediaType(string contentType) returns string {
+    int? paramIndex = contentType.indexOf(";");
+    string baseType = paramIndex is int ? contentType.substring(0, paramIndex) : contentType;
+    return baseType.trim().toLowerAscii();
 }
 
 isolated function getBuilderFromType(Response response, TargetType targetType, boolean requireLaxDataBinding) returns anydata|ClientError {
