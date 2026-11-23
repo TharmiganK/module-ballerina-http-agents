@@ -26,24 +26,24 @@
       "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/43823937608"
     },
     "client-core": {
-      "last_analysed": "2026-11-02T07:09:51.492029+00:00",
-      "sha": "056427b920c60eda30d6b10e79ff21f6cc99b236",
-      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41403250111"
+      "last_analysed": "2026-11-23T08:39:35.708211+00:00",
+      "sha": "ad64ade67e37abdff15fba06fd8f40e74dcd269e",
+      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/45138376454"
     },
     "client-data-binding": {
-      "last_analysed": "2026-11-02T07:09:51.492029+00:00",
-      "sha": "056427b920c60eda30d6b10e79ff21f6cc99b236",
-      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41403250111"
+      "last_analysed": "2026-11-23T08:39:35.708211+00:00",
+      "sha": "ad64ade67e37abdff15fba06fd8f40e74dcd269e",
+      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/45138376454"
     },
     "client-resiliency": {
-      "last_analysed": "2026-11-02T07:09:51.492029+00:00",
-      "sha": "056427b920c60eda30d6b10e79ff21f6cc99b236",
-      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41403250111"
+      "last_analysed": "2026-11-23T08:39:35.708211+00:00",
+      "sha": "ad64ade67e37abdff15fba06fd8f40e74dcd269e",
+      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/45138376454"
     },
     "caching-cookies": {
-      "last_analysed": "2026-11-02T07:09:51.492029+00:00",
-      "sha": "056427b920c60eda30d6b10e79ff21f6cc99b236",
-      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/41403250111"
+      "last_analysed": "2026-11-23T08:39:35.708211+00:00",
+      "sha": "ad64ade67e37abdff15fba06fd8f40e74dcd269e",
+      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/45138376454"
     },
     "headers-payload": {
       "last_analysed": "2026-11-03T08:26:38.519040+00:00",
@@ -315,6 +315,27 @@
       "dropped": 0,
       "report": "reports/2026-W47-run7.md",
       "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/43823937608"
+    },
+    {
+      "date": "2026-11-23T08:39:35.708211+00:00",
+      "units": [
+        "client-core",
+        "client-data-binding",
+        "client-resiliency",
+        "caching-cookies"
+      ],
+      "completed": [
+        "client-core",
+        "client-data-binding",
+        "client-resiliency",
+        "caching-cookies"
+      ],
+      "sha": "ad64ade67e37abdff15fba06fd8f40e74dcd269e",
+      "dry_run": false,
+      "filed": 12,
+      "dropped": 0,
+      "report": "reports/2026-W48-run8.md",
+      "run_url": "https://github.com/TharmiganK/module-ballerina-http-agents/actions/runs/45138376454"
     }
   ],
   "handed_off": [
